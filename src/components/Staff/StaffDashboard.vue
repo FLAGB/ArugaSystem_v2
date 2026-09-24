@@ -1,0 +1,958 @@
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
+import {
+  Syringe, FileText, Search, QrCode, UserPlus, CalendarDays,
+  Clock, CheckCircle2, AlertTriangle, Activity, MoreHorizontal,
+  Eye, UserCog, DoorOpen, TrendingUp, TrendingDown, RefreshCw,
+  ClipboardCheck, X,
+} from "lucide-vue-next";
+import StaffSidebar from "./StaffSidebar.vue";
+import StaffTopbar from "./StaffTopbar.vue";
+
+const router = useRouter();
+
+const API_BASE = "http://localhost:57147/api";
+
+const waitingCount = computed(() =>
+  queue.value.filter(q => q.status === "Waiting").length
+);
+
+const readyCount = computed(() =>
+  queue.value.filter(q => q.status === "Ready").length
+);
+
+const inProgressCount = computed(() =>
+  queue.value.filter(q => q.status === "In Progress").length
+);
+
+const completedCount = computed(() =>
+  queue.value.filter(q => q.status === "Completed").length
+);
+
+const lateCount = computed(() =>
+  queue.value.filter(q => q.status === "Late").length
+);
+
+const summaryCards = computed(() => [
+  {
+    label: "Today's Appointments",
+    value: "—",
+    trend: "Coming next",
+    up: null,
+    icon: CalendarDays,
+    tint: "text-emerald-700",
+    tintBg: "bg-emerald-50",
+  },
+  {
+    label: "Patients Waiting",
+    value: queue.value.filter(q => q.status === "Waiting").length,
+    trend: "today",
+    up: null,
+    icon: Clock,
+    tint: "text-amber-700",
+    tintBg: "bg-amber-50",
+  },
+  {
+    label: "In Progress",
+    value: queue.value.filter(q => q.status === "In Progress").length,
+    trend: "today",
+    up: null,
+    icon: Activity,
+    tint: "text-sky-700",
+    tintBg: "bg-sky-50",
+  },
+  {
+    label: "Completed Today",
+    value: queue.value.filter(q => q.status === "Completed").length,
+    trend: "today",
+    up: null,
+    icon: CheckCircle2,
+    tint: "text-emerald-700",
+    tintBg: "bg-emerald-50",
+  },
+  {
+    label: "Late Patients",
+    value: queue.value.filter(q => q.status === "Late").length,
+    trend: "today",
+    up: null,
+    icon: AlertTriangle,
+    tint: "text-rose-700",
+    tintBg: "bg-rose-50",
+  },
+  {
+    label: "Available Healthworkers",
+    value: stations.value.filter(s => !s.isOccupied).length,
+    trend: `${stations.value.length} total`,
+    up: null,
+    icon: UserCog,
+    tint: "text-sky-700",
+    tintBg: "bg-sky-50",
+  },
+]);
+
+// Each action either routes to the page that actually owns that workflow
+// (Register Child / Search Patient) or acts locally on this page (View
+// Today's Queue scrolls to the table already on this dashboard). "Scan Queue
+// QR" has no scanning feature built anywhere yet, so it's disabled rather
+// than pretending to work.
+const quickActions = [
+  { icon: UserPlus, label: "Register Child", action: () => router.push("/staff/patient-records?tab=children&openRegister=1") },
+  { icon: QrCode, label: "Scan Queue QR", disabled: true },
+  // For an already-registered patient who walks in without their parent's
+  // login (no QR, no parent account access) — this opens a modal to look
+  // up the parent/child and add them straight to today's queue, instead of
+  // routing to Register Child (which is for brand-new patients).
+  { icon: ClipboardCheck, label: "Check-In Patient", action: () => openCheckInModal() },
+  { icon: UserPlus, label: "Add Walk-in Patient", action: () => router.push("/staff/patient-records?tab=children&openRegister=1&walkin=1") },
+  { icon: Search, label: "Search Patient", action: () => router.push("/staff/patient-records?tab=parents") },
+  { icon: CalendarDays, label: "View Today's Queue", action: () => scrollToQueue() },
+];
+
+const queueSectionRef = ref(null);
+const scrollToQueue = () => {
+  queueSectionRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+const statusStyle = {
+  Waiting: "bg-amber-50 text-amber-700",
+  Ready: "bg-sky-50 text-sky-700",
+  "In Progress": "bg-violet-50 text-violet-700",
+  Completed: "bg-emerald-50 text-emerald-700",
+  Late: "bg-rose-50 text-rose-700",
+};
+const statusDot = {
+  Waiting: "bg-amber-500",
+  Ready: "bg-sky-500",
+  "In Progress": "bg-violet-500",
+  Completed: "bg-emerald-600",
+  Late: "bg-rose-600",
+};
+
+const queue = ref([]);
+const loadingQueue = ref(false);
+const queueError = ref(null);
+
+// The stat cards / donut still want today's Completed count, so `queue`
+// keeps completed visits in it — but the active table below shouldn't
+// keep showing a patient whose session is already finished.
+const visibleQueue = computed(() =>
+  queue.value.filter((q) => q.status !== "Completed")
+);
+
+// Merged in from AdminHomepage.vue: GetRooms/AssignRoom/CompleteSession are
+// real endpoints on the Vaccination controller. A "room" already comes
+// bundled with the doctor stationed there, so assigning a room IS assigning
+// a healthworker — there's no separate healthworker-only assignment
+// endpoint, so this dashboard no longer pretends there is one.
+const VACCINATION_BASE = `${API_BASE}/Vaccination`;
+// Confirmed from the real ParentsController.cs ([Route("api/[controller]")],
+// GetAllParents action mapped to "all") — GetAllParents lives at
+// GET /api/Parents/all, NOT under /Vaccination. Children not confirmed the
+// same way yet, but earlier project notes point to the same convention
+// (ChildrenController -> GET /api/Children/all); flagged below in case its
+// field names turn out to differ from Parents' confirmed shape.
+const PARENTS_BASE = `${API_BASE}/Parents`;
+const CHILDREN_BASE = `${API_BASE}/Children`;
+
+const stations = ref([]);
+const loadingStations = ref(false);
+
+const fetchStations = async () => {
+  loadingStations.value = true;
+  try {
+    const response = await fetch(`${VACCINATION_BASE}/GetRooms`);
+    if (!response.ok) throw new Error(`Failed to load rooms. Status: ${response.status}`);
+    stations.value = await response.json();
+  } catch (error) {
+    console.error("Station loading error:", error);
+    stations.value = [];
+  } finally {
+    loadingStations.value = false;
+  }
+};
+
+/* -------------------- Check-In Patient modal -------------------- */
+// Staff-initiated check-in for an existing patient, bypassing the need for
+// the parent to log in themselves. Reuses the same POST /api/Queue
+// endpoint (ParentID + ChildIDs body) that the parent-facing Checkin.vue
+// already uses for its own self-check-in.
+const checkInModalOpen = ref(false);
+const parentsList = ref([]);
+const childrenList = ref([]);
+const loadingCheckInData = ref(false);
+const parentSearch = ref("");
+const selectedParent = ref(null);
+const selectedChildIds = ref([]);
+const submittingCheckIn = ref(false);
+const checkInError = ref(null);
+
+// Confirmed real shapes from ParentsController.cs and ChildrenController.cs:
+// Parent: { parentID, firstName, middleName, lastName, email, contactNo,
+//   barangayNo, address } — no separate name/fullName field.
+// Child (GetAllChildren): { childID, firstName, middleName, lastName,
+//   birthDate, ..., parents: [{ parentID, parentName, relationshipType,
+//   isPrimaryContact, canReceiveNotifications }] } — parent linkage is a
+// many-to-many array (a child can have more than one guardian), NOT a
+// single top-level parentID field like the earlier guess assumed.
+const getParentId = (p) => p.parentID;
+const getParentName = (p) => [p.firstName, p.lastName].filter(Boolean).join(" ") || "Unnamed Parent";
+const getChildId = (c) => c.childID;
+const childBelongsToParent = (c, parentId) =>
+  Array.isArray(c.parents) && c.parents.some((r) => r.parentID === parentId);
+const getChildName = (c) =>
+  [c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed Child";
+
+const openCheckInModal = async () => {
+  checkInModalOpen.value = true;
+  checkInError.value = null;
+  selectedParent.value = null;
+  selectedChildIds.value = [];
+  parentSearch.value = "";
+
+  if (parentsList.value.length && childrenList.value.length) return; // already loaded this session
+
+  loadingCheckInData.value = true;
+  try {
+    const [parentsRes, childrenRes] = await Promise.all([
+      fetch(`${PARENTS_BASE}/all`),
+      fetch(`${CHILDREN_BASE}/all`),
+    ]);
+
+    // Report exactly which call failed and why, instead of a generic
+    // message — a 404 (wrong route), a 401/403 (auth), and a 500 (server
+    // error) all need a different fix, so surfacing the real status here
+    // saves a trip to DevTools.
+    if (!parentsRes.ok) {
+      const body = await parentsRes.text().catch(() => "");
+      throw new Error(`GET /api/Parents/all failed — status ${parentsRes.status}. ${body.slice(0, 200)}`);
+    }
+    if (!childrenRes.ok) {
+      const body = await childrenRes.text().catch(() => "");
+      throw new Error(`GET /api/Children/all failed — status ${childrenRes.status}. ${body.slice(0, 200)}`);
+    }
+
+    parentsList.value = await parentsRes.json();
+    childrenList.value = await childrenRes.json();
+
+    if (!Array.isArray(parentsList.value) || !Array.isArray(childrenList.value)) {
+      throw new Error("Server responded, but not with the expected array shape — check the API response in DevTools.");
+    }
+  } catch (error) {
+    console.error("Check-in lookup error:", error);
+    checkInError.value = error.message || "Couldn't load parent/child records. Please try again.";
+  } finally {
+    loadingCheckInData.value = false;
+  }
+};
+
+const closeCheckInModal = () => {
+  checkInModalOpen.value = false;
+};
+
+const filteredParents = computed(() => {
+  const term = parentSearch.value.trim().toLowerCase();
+  if (!term) return [];
+  return parentsList.value
+    .filter((p) => getParentName(p).toLowerCase().includes(term))
+    .slice(0, 8);
+});
+
+const pickParent = (p) => {
+  selectedParent.value = p;
+  selectedChildIds.value = [];
+  parentSearch.value = "";
+};
+
+const childrenForSelectedParent = computed(() => {
+  if (!selectedParent.value) return [];
+  const parentId = getParentId(selectedParent.value);
+  return childrenList.value.filter((c) => childBelongsToParent(c, parentId));
+});
+
+const toggleChildSelection = (childId) => {
+  const idx = selectedChildIds.value.indexOf(childId);
+  if (idx === -1) selectedChildIds.value.push(childId);
+  else selectedChildIds.value.splice(idx, 1);
+};
+
+const submitCheckIn = async () => {
+  if (!selectedParent.value || selectedChildIds.value.length === 0) return;
+  submittingCheckIn.value = true;
+  checkInError.value = null;
+  try {
+    const response = await fetch(`${API_BASE}/Queue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ParentID: getParentId(selectedParent.value),
+        ChildIDs: selectedChildIds.value,
+      }),
+    });
+
+    if (response.status === 409) {
+      checkInError.value = "This patient is already checked in today.";
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to check in. Status: ${response.status}`);
+    }
+
+    checkInModalOpen.value = false;
+    await loadQueue();
+  } catch (error) {
+    console.error("Check-in submit error:", error);
+    checkInError.value = "Couldn't complete check-in. Please try again.";
+  } finally {
+    submittingCheckIn.value = false;
+  }
+};
+
+const expandedRow = ref(null);
+const assignMenuOpen = ref(null); // queueID | `${queueID}-more` | null
+const menuPosition = ref({ top: "0px", left: "0px" });
+
+const toggleExpand = (q) => {
+  expandedRow.value = expandedRow.value === q.queueID ? null : q.queueID;
+};
+
+// Popovers are teleported to <body> (see template) so the table's
+// overflow-x-auto and the card's overflow-hidden don't clip them —
+// position is computed from the trigger button's own screen position.
+const toggleMenu = (key, event) => {
+  if (assignMenuOpen.value === key) {
+    assignMenuOpen.value = null;
+    return;
+  }
+  const rect = event.currentTarget.getBoundingClientRect();
+  menuPosition.value = {
+    top: `${rect.bottom + window.scrollY + 6}px`,
+    left: `${rect.right + window.scrollX - 256}px`, // 256px = popover width (w-64)
+  };
+  assignMenuOpen.value = key;
+};
+
+const activeAssignQueue = computed(() =>
+  queue.value.find(q => q.queueID === assignMenuOpen.value)
+);
+
+const activeMoreQueue = computed(() => {
+  const key = assignMenuOpen.value;
+  if (!key || !key.toString().endsWith("-more")) return null;
+  return queue.value.find(q => q.queueID === key.toString().replace("-more", ""));
+});
+
+const closeMenus = (event) => {
+  if (!assignMenuOpen.value) return;
+  if (event.target.closest(".menu-trigger") || event.target.closest(".menu-popover")) return;
+  assignMenuOpen.value = null;
+};
+
+const openAssignMenu = (q) => {
+  assignMenuOpen.value = assignMenuOpen.value === q.queueID ? null : q.queueID;
+};
+
+const assignStation = async (q, station) => {
+  try {
+    await fetch(`${VACCINATION_BASE}/AssignRoom`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queueId: q.queueID, roomId: station.roomId }),
+    });
+    assignMenuOpen.value = null;
+    await Promise.all([loadQueue(), fetchStations()]);
+  } catch (error) {
+    console.error("Assign station error:", error);
+    alert("Could not assign this patient to a station. Please try again.");
+  }
+};
+
+const completeSession = async (station) => {
+  try {
+    await fetch(`${VACCINATION_BASE}/CompleteSession/${station.roomID ?? station.roomId}`, {
+      method: "POST",
+    });
+    await Promise.all([loadQueue(), fetchStations()]);
+  } catch (error) {
+    console.error("Complete session error:", error);
+    alert("Could not mark this station's session as done. Please try again.");
+  }
+};
+
+// No backend endpoint exists to remove a queue entry outright — this stays
+// local-state only until one does.
+const removeFromQueue = (q) => {
+  queue.value = queue.value.filter(r => r.queueID !== q.queueID);
+  assignMenuOpen.value = null;
+};
+
+const expected = [
+  { child: "Julian Reyes", time: "9:15 AM", parent: "Mark Reyes", status: "Checked In" },
+  { child: "Ava Dizon", time: "9:15 AM", parent: "Carmen Dizon", status: "Checked In" },
+  { child: "Noah Bautista", time: "9:30 AM", parent: "Ramon Bautista", status: "Checked In" },
+  { child: "Zoe Manalo", time: "10:00 AM", parent: "Paolo Manalo", status: "Not Arrived" },
+  { child: "Leo Fernandez", time: "10:15 AM", parent: "Dina Fernandez", status: "Not Arrived" },
+  { child: "Sophia Ramos", time: "8:45 AM", parent: "Ana Ramos", status: "Late" },
+];
+const arrivalStyle = {
+  "Checked In": "bg-emerald-50 text-emerald-700",
+  "Not Arrived": "bg-stone-100 text-stone-600",
+  Late: "bg-rose-50 text-rose-700",
+};
+// NOTE: "Expected Today" is still mock data — there's no real appointments/
+// schedule endpoint anywhere in the uploaded files to source this from
+// (AdminHomepage.vue's version was equally mocked). Leaving as-is until
+// that endpoint exists.
+
+
+// "Available Healthworkers" section below is now driven by `stations`
+// (from GetRooms), each of which already carries its stationed doctor's
+// name and occupancy — replacing the old hardcoded healthworkers mock.
+
+const stockAlerts = [
+  { name: "MMR", detail: "20 doses remaining", note: "Expires in 5 days", level: "Critical" },
+  { name: "Pentavalent", detail: "15 doses remaining", note: "Low stock", level: "Low" },
+  { name: "BCG", detail: "60 doses remaining", note: "Expires in 30 days", level: "Watch" },
+];
+const stockStyle = {
+  Critical: "bg-rose-50 text-rose-700",
+  Low: "bg-amber-50 text-amber-700",
+  Watch: "bg-sky-50 text-sky-700",
+};
+const stockNoteColor = {
+  Critical: "text-rose-700",
+  Low: "text-amber-700",
+  Watch: "text-sky-700",
+};
+
+const activities = [
+  { icon: UserPlus, text: "Zoe Manalo registered as a walk-in patient.", time: "3 min ago" },
+  { icon: DoorOpen, text: "Julian Reyes checked in and assigned to Room 1.", time: "10 min ago" },
+  { icon: UserCog, text: "Mika Santos assigned to Nurse Bea Fernandez.", time: "16 min ago" },
+  { icon: Syringe, text: "Vaccination completed for Gabriel Torres.", time: "24 min ago" },
+  { icon: FileText, text: "Parent contact info updated for Ava Dizon.", time: "38 min ago" },
+  { icon: AlertTriangle, text: "Sophia Ramos flagged as late for her 8:45 AM slot.", time: "51 min ago" },
+];
+
+/* Queue overview donut chart */
+
+const donutData = computed(() => [
+  {
+    name: "Waiting",
+    value: queue.value.filter(q => q.status === "Waiting").length,
+    color: "#d97706",
+    dot: "bg-amber-500",
+  },
+  {
+    name: "Ready",
+    value: queue.value.filter(q => q.status === "Ready").length,
+    color: "#0284c7",
+    dot: "bg-sky-500",
+  },
+  {
+    name: "In Progress",
+    value: queue.value.filter(q => q.status === "In Progress").length,
+    color: "#7c3aed",
+    dot: "bg-violet-500",
+  },
+  {
+    name: "Completed",
+    value: queue.value.filter(q => q.status === "Completed").length,
+    color: "#059669",
+    dot: "bg-emerald-600",
+  },
+  {
+    name: "Late",
+    value: queue.value.filter(q => q.status === "Late").length,
+    color: "#e11d48",
+    dot: "bg-rose-600",
+  },
+]);
+
+const donutTotal = computed(() =>
+  donutData.value.reduce((sum, item) => sum + item.value, 0)
+);
+
+const donutGradient = computed(() => {
+  if (donutTotal.value === 0) {
+    return "conic-gradient(#e7e5e4 0deg 360deg)";
+  }
+
+  let start = 0;
+
+  const stops = donutData.value.map((d) => {
+    const end =
+      start + (d.value / donutTotal.value) * 360;
+
+    const stop =
+      `${d.color} ${start}deg ${end}deg`;
+
+    start = end;
+
+    return stop;
+  });
+
+  return `conic-gradient(${stops.join(", ")})`;
+});
+
+
+const loadQueue = async () => {
+  loadingQueue.value = true;
+  queueError.value = null;
+
+  try {
+    const response = await fetch(`${API_BASE}/Queue/today`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to load queue. Status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+queue.value = data.map((q) => ({
+  queueID: q.queueID,
+  queueNumber: q.queueNumber,
+
+  no: `Q-${String(q.queueNumber).padStart(3, "0")}`,
+
+  child:
+    q.children?.map(c => c.name).join(", ") || "—",
+
+  parent:
+    q.requestBy || "—",
+
+  time: "—",
+  worker: "—",
+  room: "—",
+
+  status:
+    q.status || "Waiting",
+}));
+  } catch (error) {
+    console.error("Queue loading error:", error);
+    queueError.value = error.message;
+  } finally {
+    loadingQueue.value = false;
+  }
+};
+let queueRefreshInterval = null;
+
+onMounted(() => {
+  loadQueue();
+  fetchStations();
+  document.addEventListener("click", closeMenus);
+
+  queueRefreshInterval = setInterval(() => {
+    loadQueue();
+    fetchStations();
+  }, 5000);
+});
+
+onUnmounted(() => {
+  if (queueRefreshInterval) {
+    clearInterval(queueRefreshInterval);
+  }
+  document.removeEventListener("click", closeMenus);
+});
+</script>
+
+<template>
+  <div class="flex min-h-screen w-full bg-stone-50 text-stone-900" style="font-family: 'Inter','Segoe UI',sans-serif;">
+    <!-- ---------------- Sidebar ---------------- -->
+    <StaffSidebar />
+
+    <!-- ---------------- Main ---------------- -->
+    <main class="flex-1 min-w-0">
+      <StaffTopbar title="Staff Dashboard" breadcrumb="Aruga / Dashboard" />
+
+      <div class="px-8 py-6 space-y-6">
+        <!-- Summary cards -->
+        <div class="grid grid-cols-6 gap-4">
+          <div
+            v-for="c in summaryCards"
+            :key="c.label"
+            class="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
+          >
+            <div class="flex items-center justify-between">
+              <p class="text-[10.5px] font-semibold uppercase tracking-wide text-stone-500">{{ c.label }}</p>
+              <div class="flex h-7 w-7 items-center justify-center rounded-lg shrink-0" :class="c.tintBg">
+                <component :is="c.icon" :size="14" :class="c.tint" />
+              </div>
+            </div>
+            <p class="text-[26px] font-bold mt-2">{{ c.value }}</p>
+            <div class="flex items-center gap-1 mt-1">
+              <TrendingUp v-if="c.up === true" :size="12" class="text-emerald-700" />
+              <TrendingDown v-if="c.up === false" :size="12" class="text-rose-700" />
+              <span
+                class="text-[11px] font-medium"
+                :class="c.up === true ? 'text-emerald-700' : c.up === false ? 'text-rose-700' : 'text-stone-500'"
+              >
+                {{ c.trend }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+          <p class="text-[14px] font-semibold mb-3">Quick Actions</p>
+          <div class="flex flex-wrap gap-3">
+            <button
+              v-for="a in quickActions"
+              :key="a.label"
+              @click="a.action && a.action()"
+              :disabled="a.disabled"
+              :title="a.disabled ? 'Coming soon' : a.label"
+              class="flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium border border-stone-200 transition-colors"
+              :class="a.disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-stone-50'"
+            >
+              <component :is="a.icon" :size="16" class="text-emerald-700" />
+              {{ a.label }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Queue + side column -->
+        <div class="grid grid-cols-12 gap-6">
+          <!-- Today's Queue -->
+          <div ref="queueSectionRef" class="col-span-8 rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+            
+            <div class="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+  <div>
+    <p class="text-[14px] font-semibold">Today's Queue</p>
+
+    <span class="text-[12px] text-stone-500">
+      {{ visibleQueue.length }} patients in queue
+    </span>
+  </div>
+
+  <button
+    @click="loadQueue"
+    :disabled="loadingQueue"
+    class="flex items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-[12px] font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+  >
+    <RefreshCw
+      :size="14"
+      :class="{ 'animate-spin': loadingQueue }"
+    />
+
+    Refresh
+  </button>
+</div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-[13px]">
+                <thead>
+                  <tr class="bg-stone-50">
+                    <th
+                      v-for="h in ['Queue No.', 'Child', 'Parent', 'Time', 'Healthworker', 'Room', 'Status', '']"
+                      :key="h"
+                      class="text-left font-semibold px-5 py-3 whitespace-nowrap text-[11px] uppercase tracking-wide text-stone-500"
+                    >
+                      {{ h }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template v-for="q in visibleQueue" :key="q.queueID">
+                   <tr class="border-t border-stone-200">
+                    <td class="px-5 py-3 font-medium whitespace-nowrap">{{ q.no }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap">{{ q.child }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap text-stone-500">{{ q.parent }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap text-stone-500">{{ q.time }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap">{{ q.worker }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap text-stone-500">{{ q.room }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap">
+                      <span
+                        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+                        :class="statusStyle[q.status]"
+                      >
+                        <span class="h-1.5 w-1.5 rounded-full" :class="statusDot[q.status]" />
+                        {{ q.status }}
+                      </span>
+                    </td>
+                    <td class="px-5 py-3 whitespace-nowrap relative">
+                      <div class="flex items-center gap-1">
+                        <button @click="toggleExpand(q)" class="p-1.5 rounded-lg hover:bg-stone-100" title="View Patient">
+                          <Eye :size="15" class="text-stone-500" />
+                        </button>
+                        <button @click="toggleMenu(q.queueID, $event)" class="menu-trigger p-1.5 rounded-lg hover:bg-stone-100" title="Assign Station">
+                          <DoorOpen :size="15" class="text-stone-500" />
+                        </button>
+                        <button @click="toggleMenu(`${q.queueID}-more`, $event)" class="menu-trigger p-1.5 rounded-lg hover:bg-stone-100" title="More">
+                          <MoreHorizontal :size="15" class="text-stone-500" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="expandedRow === q.queueID" class="bg-stone-50 border-t border-stone-100">
+                    <td colspan="8" class="px-5 py-3 text-[12.5px] text-stone-600">
+                      <span class="font-medium text-stone-800">Queue {{ q.no }}</span> —
+                      Child: {{ q.child }} · Parent: {{ q.parent }} · Status: {{ q.status }}
+                      <span class="text-stone-400"> (full profile view isn't wired to a route yet — needs the Children Record page to accept lookup by name/ID.)</span>
+                    </td>
+                  </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Right column: donut + expected patients -->
+          <div class="col-span-4 flex flex-col gap-6">
+            <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+              <p class="text-[14px] font-semibold mb-2">Queue Overview</p>
+              <div class="h-40 relative flex items-center justify-center">
+                <div class="h-32 w-32 rounded-full" :style="{ background: donutGradient }">
+                  <div class="h-full w-full flex items-center justify-center">
+                    <div class="h-19 w-19 rounded-full bg-white flex flex-col items-center justify-center">
+                      <p class="text-[20px] font-bold">{{ donutTotal }}</p>
+                      <p class="text-[10px] text-stone-500">Total today</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3">
+                <div v-for="d in donutData" :key="d.name" class="flex items-center gap-1.5 text-[11.5px]">
+                  <span class="h-2 w-2 rounded-full" :class="d.dot" />
+                  <span class="text-stone-500">{{ d.name }}</span>
+                  <span class="font-semibold ml-auto">{{ d.value }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm flex-1">
+              <div class="flex items-center justify-between mb-3">
+                <p class="text-[14px] font-semibold">Expected Patients</p>
+                <span class="text-[11px] text-stone-500">{{ expected.length }} today</span>
+              </div>
+              <div class="space-y-1 max-h-70 overflow-y-auto pr-1">
+                <div
+                  v-for="p in expected"
+                  :key="p.child"
+                  class="flex items-center justify-between rounded-xl px-3 py-2.5 bg-stone-50"
+                >
+                  <div class="min-w-0">
+                    <p class="text-[12.5px] font-medium truncate">{{ p.child }}</p>
+                    <p class="text-[11px] truncate text-stone-500">{{ p.time }} · {{ p.parent }}</p>
+                  </div>
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium shrink-0"
+                    :class="arrivalStyle[p.status]"
+                  >
+                    {{ p.status }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stations (real data from GET /api/Vaccination/GetRooms) -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-[14px] font-semibold">Stations</p>
+            <span v-if="loadingStations" class="text-[11px] text-stone-400">Loading…</span>
+          </div>
+          <div class="grid grid-cols-5 gap-4">
+            <div
+              v-for="s in stations"
+              :key="s.roomId"
+              class="rounded-2xl border p-4 shadow-sm"
+              :class="s.isOccupied ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/20'"
+            >
+              <div class="flex items-center gap-3">
+                <div
+                  class="flex h-10 w-10 items-center justify-center rounded-full text-white text-[12px] font-semibold shrink-0"
+                  :class="s.isOccupied ? 'bg-amber-600' : 'bg-emerald-700'"
+                >
+                  {{ s.doctorName?.split(' ').filter(Boolean).slice(0,2).map(w => w[0]).join('') || '—' }}
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[12.5px] font-semibold truncate">{{ s.doctorName || 'Unassigned' }}</p>
+                  <p class="text-[11px] truncate text-stone-500">{{ s.roomName }}</p>
+                </div>
+              </div>
+              <div class="mt-3 flex items-center justify-between">
+                <span
+                  class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium"
+                  :class="s.isOccupied ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'"
+                >
+                  {{ s.isOccupied ? 'Busy' : 'Available' }}
+                </span>
+                <button
+                  v-if="s.isOccupied"
+                  @click="completeSession(s)"
+                  class="text-[10.5px] font-semibold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-emerald-600 hover:text-white transition-colors"
+                >
+                  Mark Done
+                </button>
+              </div>
+            </div>
+            <p v-if="!loadingStations && stations.length === 0" class="col-span-5 text-[12.5px] text-stone-400">
+              No stations returned from the server.
+            </p>
+          </div>
+        </div>
+
+        <!-- Stock alerts + activities -->
+        <div class="grid grid-cols-12 gap-6">
+          <div class="col-span-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+            <p class="text-[14px] font-semibold mb-3">Vaccine Stock Alerts</p>
+            <div class="space-y-2.5">
+              <div
+                v-for="s in stockAlerts"
+                :key="s.name"
+                class="flex items-center justify-between rounded-xl px-3 py-2.5 bg-stone-50"
+              >
+                <div class="min-w-0">
+                  <p class="text-[12.5px] font-semibold">{{ s.name }}</p>
+                  <p class="text-[11px] text-stone-500">{{ s.detail }}</p>
+                  <p class="text-[11px]" :class="stockNoteColor[s.level]">{{ s.note }}</p>
+                </div>
+                <span
+                  class="text-[10.5px] font-semibold px-2 py-1 rounded-full shrink-0"
+                  :class="stockStyle[s.level]"
+                >
+                  {{ s.level }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-span-8 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+            <p class="text-[14px] font-semibold mb-3">Recent Clinic Activities</p>
+            <div class="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+              <div v-for="(a, i) in activities" :key="i" class="flex items-start gap-3">
+                <div class="flex h-8 w-8 items-center justify-center rounded-full shrink-0 bg-emerald-50">
+                  <component :is="a.icon" :size="14" class="text-emerald-800" />
+                </div>
+                <div class="flex-1 min-w-0 flex items-start justify-between gap-3">
+                  <p class="text-[12.5px]">{{ a.text }}</p>
+                  <span class="text-[11px] whitespace-nowrap text-stone-500">{{ a.time }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+        <Teleport to="body">
+    <div
+      v-if="activeAssignQueue"
+      class="menu-popover fixed z-50 w-64 rounded-xl border border-stone-200 bg-white shadow-lg p-2"
+      :style="menuPosition"
+    >
+      <p class="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Assign to station</p>
+      <button
+        v-for="s in stations.filter(st => !st.isOccupied)"
+        :key="s.roomId"
+        @click="assignStation(activeAssignQueue, s)"
+        class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[12.5px] hover:bg-stone-50"
+      >
+        <span>{{ s.roomName }}</span>
+        <span class="text-[10.5px] text-stone-400">{{ s.doctorName }}</span>
+      </button>
+      <p v-if="stations.filter(st => !st.isOccupied).length === 0" class="px-2 py-1.5 text-[12px] text-stone-400">
+        No stations available right now.
+      </p>
+    </div>
+
+    <div
+      v-if="activeMoreQueue"
+      class="menu-popover fixed z-50 w-48 rounded-xl border border-stone-200 bg-white shadow-lg p-2"
+      :style="menuPosition"
+    >
+      <button @click="removeFromQueue(activeMoreQueue)" class="flex w-full items-center rounded-lg px-2 py-1.5 text-[12.5px] text-rose-700 hover:bg-rose-50">
+        Remove from Queue
+      </button>
+    </div>
+
+    <!-- Check-In Patient modal -->
+    <div v-if="checkInModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+      <div class="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+          <p class="text-[15px] font-semibold">Check-In Patient</p>
+          <button @click="closeCheckInModal" class="p-1.5 rounded-lg hover:bg-stone-100">
+            <X :size="16" class="text-stone-500" />
+          </button>
+        </div>
+
+        <div class="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+          <p v-if="loadingCheckInData" class="text-[12.5px] text-stone-400">Loading parent/child records…</p>
+
+          <template v-if="!loadingCheckInData">
+            <!-- Step 1: find the parent -->
+            <div v-if="!selectedParent">
+              <label class="block text-[12px] font-medium text-stone-600 mb-1">Search parent by name</label>
+              <input
+                v-model="parentSearch"
+                type="text"
+                placeholder="e.g. Mark Reyes"
+                class="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600"
+              />
+              <div v-if="parentSearch.trim()" class="mt-2 rounded-xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
+                <button
+                  v-for="p in filteredParents"
+                  :key="getParentId(p)"
+                  @click="pickParent(p)"
+                  class="flex w-full items-center justify-between px-3 py-2.5 text-left text-[13px] hover:bg-stone-50"
+                >
+                  {{ getParentName(p) }}
+                </button>
+                <p v-if="filteredParents.length === 0" class="px-3 py-2.5 text-[12.5px] text-stone-400">
+                  No matching parent found.
+                </p>
+              </div>
+            </div>
+
+            <!-- Step 2: pick which of the parent's children to check in -->
+            <div v-else>
+              <div class="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5 mb-3">
+                <p class="text-[13px] font-medium">{{ getParentName(selectedParent) }}</p>
+                <button @click="selectedParent = null" class="text-[11.5px] text-emerald-700 font-medium hover:underline">
+                  Change
+                </button>
+              </div>
+
+              <p class="text-[12px] font-medium text-stone-600 mb-2">Select child(ren) to check in</p>
+              <div class="space-y-1.5">
+                <label
+                  v-for="c in childrenForSelectedParent"
+                  :key="getChildId(c)"
+                  class="flex items-center gap-2.5 rounded-xl border border-stone-200 px-3 py-2.5 text-[13px] cursor-pointer hover:bg-stone-50"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedChildIds.includes(getChildId(c))"
+                    @change="toggleChildSelection(getChildId(c))"
+                    class="rounded border-stone-300 text-emerald-700 focus:ring-emerald-600/30"
+                  />
+                  {{ getChildName(c) }}
+                </label>
+                <p v-if="childrenForSelectedParent.length === 0" class="text-[12.5px] text-stone-400">
+                  No children on file for this parent.
+                </p>
+              </div>
+            </div>
+
+            <p v-if="checkInError" class="text-[12.5px] text-rose-700">{{ checkInError }}</p>
+          </template>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-stone-200">
+          <button @click="closeCheckInModal" class="rounded-xl px-4 py-2.5 text-[13px] font-medium text-stone-600 hover:bg-stone-50">
+            Cancel
+          </button>
+          <button
+            @click="submitCheckIn"
+            :disabled="!selectedParent || selectedChildIds.length === 0 || submittingCheckIn"
+            class="rounded-xl bg-emerald-700 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {{ submittingCheckIn ? "Checking in…" : "Check In" }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+    </main>
+  </div>
+</template>

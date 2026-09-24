@@ -1,0 +1,30 @@
+{
+  "name": "arugasystem",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.3",
+    "@zxing/browser": "^0.2.1",
+    "axios": "^1.16.0",
+    "date-fns": "^4.1.0",
+    "html5-qrcode": "^2.3.8",
+    "lucide-vue-next": "^1.0.0",
+    "tailwindcss": "^4.2.3",
+    "vue": "^3.5.32",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "vite": "^8.0.8",
+    "vite-plugin-vue-devtools": "^8.1.1"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}
