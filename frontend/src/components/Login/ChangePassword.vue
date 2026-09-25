@@ -93,7 +93,7 @@ const canSubmit = computed(() =>
 function redirectForRole(role) {
   switch (role) {
     case "Parent":
-      router.push("/ParentHome")
+      router.push("/ParentOverview")
       break
 
     case "Doctor":
@@ -248,7 +248,7 @@ function handleLogout() {
         <div class="mb-8">
           <h2 class="text-3xl font-black text-[#2d3a26]">Change Your Password</h2>
           <p class="text-gray-500 mt-2">
-            For your security, you need to set a new password before continuing<span v-if="account">, {{ account.firstName || account.username || "there" }}</span>.
+            For your security, you need to set a new password before continuing<span v-if="account"> {{ account.firstName || account.username || " to the dashboard" }}</span>.
           </p>
         </div>
 

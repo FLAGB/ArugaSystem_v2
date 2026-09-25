@@ -237,29 +237,17 @@
 
             <!-- Loading -->
             <div
-                v-if="loadingTimeline"
+                v-if="loadingHistory"
                 class="flex items-center gap-2 text-sm text-slate-400"
             >
                 <Loader2 class="w-4 h-4 animate-spin" />
                 Loading schedule...
             </div>
 
-            <!-- Error -->
-            <div
-                v-else-if="timelineError"
-                class="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg text-xs text-red-700"
-            >
-                <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
-
-                <span>
-                    {{ timelineError }}
-                </span>
-            </div>
-
             <!-- Next vaccine -->
             <div
-                v-else-if="nextVaccination"
-                class="grid grid-cols-4 gap-4"
+                v-else-if="selectedChild.nextDueDate"
+                class="grid grid-cols-3 gap-4"
             >
 
                 <div>
@@ -268,17 +256,7 @@
                     </p>
 
                     <p class="font-semibold text-slate-800 mt-1">
-                        {{ nextVaccination.vaccineName }}
-                    </p>
-                </div>
-
-                <div>
-                    <p class="text-xs text-slate-400">
-                        Dose
-                    </p>
-
-                    <p class="text-sm text-slate-700 mt-1">
-                        Dose {{ nextVaccination.doseNumber }}
+                        {{ selectedChild.nextVaccineName }}
                     </p>
                 </div>
 
@@ -288,7 +266,7 @@
                     </p>
 
                     <p class="text-sm text-slate-700 mt-1">
-                        {{ formatDate(nextVaccination.scheduledDate) }}
+                        {{ formatDate(selectedChild.nextDueDate) }}
                     </p>
                 </div>
 
@@ -298,9 +276,10 @@
                     </p>
 
                     <span
-                        class="inline-flex mt-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700"
+                        class="inline-flex mt-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                        :class="statusClass(selectedChild.vaccineStatus)"
                     >
-                        {{ nextVaccination.status }}
+                        {{ selectedChild.vaccineStatus }}
                     </span>
                 </div>
 
@@ -309,9 +288,10 @@
             <!-- No pending vaccine -->
             <div
                 v-else
-                class="text-sm text-slate-400"
+                class="text-sm"
+                :class="selectedChild.vaccineStatus === 'Completed' ? 'text-emerald-600 font-medium' : 'text-slate-400'"
             >
-                No upcoming vaccination scheduled.
+                {{ selectedChild.vaccineStatus === 'Completed' ? 'Series complete.' : 'No upcoming vaccination scheduled.' }}
             </div>
 
         </div>
@@ -510,22 +490,17 @@
                 />
                 </div>
 
-                <!--
-                STATUS FILTER — disabled on purpose. Filtering by
-                Pending/Scheduled/Completed/Overdue needs a per-child
-                vaccination status, which requires VaccinationTimeline
-                (not yet confirmed). Left visible so the control isn't
-                silently missing from the UI, but it doesn't pretend to
-                filter on data we don't have.
-                -->
-                <div class="relative group">
-                <select disabled class="appearance-none pl-3 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-400 cursor-not-allowed">
-                    <option>Status: All</option>
+                <select
+                    v-model="statusFilter"
+                    class="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-600"
+                >
+                    <option value="">Status: All</option>
+                    <option value="Due Soon">Due Soon</option>
+                    <option value="Overdue">Overdue</option>
+                    <option value="Up to Date">Up to Date</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Not Started">Not Started</option>
                 </select>
-                <div class="absolute -bottom-6 left-0 hidden group-hover:block text-[11px] text-slate-400 whitespace-nowrap bg-white border border-slate-200 rounded px-2 py-1 shadow-sm z-10">
-                    Needs VaccinationTimeline data to filter by status
-                </div>
-                </div>
             </div>
 
             <!-- LOADING / ERROR / EMPTY -->
@@ -575,8 +550,19 @@
                     <td class="px-3 py-3 text-slate-500">{{ c.barangayNo || '—' }}</td>
                     <td class="px-3 py-3 text-slate-500">{{ c.ageLabel || '—' }}</td>
                     <td class="px-3 py-3 text-slate-500">{{ c.sex || '—' }}</td>
-                    <td class="px-3 py-3 text-slate-400 italic">Not available</td>
-                    <td class="px-3 py-3 text-slate-400 italic">Not available</td>
+                    <td class="px-3 py-3 text-slate-500 text-xs">
+                        <span v-if="c.nextDueDate">{{ formatDate(c.nextDueDate) }}</span>
+                        <span v-else-if="c.vaccineStatus === 'Completed'" class="text-emerald-600 font-medium">Series complete</span>
+                        <span v-else class="text-slate-400">—</span>
+                    </td>
+                    <td class="px-3 py-3">
+                        <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            :class="statusClass(c.vaccineStatus)"
+                        >
+                            {{ c.vaccineStatus }}
+                        </span>
+                    </td>
                     <td class="px-3 py-3">
                         <div class="flex items-center gap-1.5">
                         <button
@@ -602,14 +588,39 @@
                 <!-- PAGINATION -->
                 <div class="flex items-center justify-between px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
                 <span>Showing {{ pageStart + 1 }}-{{ Math.min(pageStart + pageSize, filteredChildren.length) }} of {{ filteredChildren.length }} patients</span>
-                <div class="flex items-center gap-2">
-                    <button @click="currentPage--" :disabled="currentPage === 1" class="p-1 rounded disabled:opacity-30 hover:bg-slate-100">
-                    <ChevronLeft class="w-3.5 h-3.5" />
-                    </button>
-                    <span>Page {{ currentPage }}</span>
-                    <button @click="currentPage++" :disabled="currentPage >= totalPages" class="p-1 rounded disabled:opacity-30 hover:bg-slate-100">
-                    <ChevronRight class="w-3.5 h-3.5" />
-                    </button>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-1.5">
+                        <span>Show</span>
+                        <select
+                            v-model.number="pageSize"
+                            class="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                            <option :value="10">10</option>
+                            <option :value="20">20</option>
+                            <option :value="30">30</option>
+                            <option :value="50">50</option>
+                        </select>
+                        <span>entries</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button @click="currentPage--" :disabled="currentPage === 1" class="p-1 rounded disabled:opacity-30 hover:bg-slate-100">
+                        <ChevronLeft class="w-3.5 h-3.5" />
+                        </button>
+                        <template v-for="(p, idx) in pageNumbers" :key="idx">
+                            <span v-if="p === '…'" class="px-1.5">…</span>
+                            <button
+                                v-else
+                                @click="currentPage = p"
+                                class="min-w-[24px] px-1.5 py-1 rounded text-xs"
+                                :class="p === currentPage ? 'bg-emerald-600 text-white font-medium' : 'text-slate-500 hover:bg-slate-100'"
+                            >
+                                {{ p }}
+                            </button>
+                        </template>
+                        <button @click="currentPage++" :disabled="currentPage >= totalPages" class="p-1 rounded disabled:opacity-30 hover:bg-slate-100">
+                        <ChevronRight class="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
                 </div>
             </div>
@@ -629,7 +640,7 @@
 
     <script setup>
     import { getUser, getToken, logout as clearSession } from '@/utils/auth'
-    import { ref, computed, onMounted } from 'vue'
+    import { ref, computed, onMounted, watch } from 'vue'
     import { useRouter } from 'vue-router'
     import {
     Search, Loader2, UserX, Eye, Syringe, AlertCircle, ArrowLeft,
@@ -691,10 +702,93 @@
     // read here. No medical fields exist on this model at all,
     // confirming the Medical Information gap below.
     // ─────────────────────────────────────────────────────────────
-    const allChildren     = ref([])
-    const loadingChildren = ref(false)
-    const loadError       = ref('')
-    const searchTerm      = ref('')
+    // ─────────────────────────────────────────────────────────────
+    // DOH vaccine master — same list/dose counts used on the Doctor
+    // side (DoctorPatients.vue) so Status/Next Schedule match there.
+    // ─────────────────────────────────────────────────────────────
+    const VACCINE_MASTER = [
+        { vaccineId: 1, name: 'BCG Vaccine',                      totalDoses: 1 },
+        { vaccineId: 2, name: 'Hepatitis B Vaccine',              totalDoses: 1 },
+        { vaccineId: 3, name: 'Pentavalent (DPT-Hep B-HIB)',      totalDoses: 3, gap: 28 },
+        { vaccineId: 4, name: 'Oral Polio Vaccine (OPV)',         totalDoses: 3, gap: 28 },
+        { vaccineId: 5, name: 'Inactivated Polio Vaccine (IPV)',  totalDoses: 2, gap: 165 },
+        { vaccineId: 6, name: 'Pneumococcal Conj. Vaccine (PCV)', totalDoses: 3, gap: 28 },
+        { vaccineId: 7, name: 'MMR Vaccine',                      totalDoses: 2, gap: 90 },
+    ]
+    const TOTAL_DOSES = VACCINE_MASTER.reduce((sum, v) => sum + v.totalDoses, 0)
+
+    // Shared with openRecord() below so the list and the detail view
+    // always agree on a child's status/next dose, computed the same way.
+    function computeVaccineSummary(childRecords, today) {
+        const hasAnyRecords  = childRecords.length > 0
+        const completedCount = childRecords.filter(r => (r.status ?? r.Status) === 'Completed').length
+        const allDone        = hasAnyRecords && completedCount >= TOTAL_DOSES
+
+        const pendingRecords = childRecords
+            .filter(r => (r.status ?? r.Status) !== 'Completed' && (r.vaccinationDate ?? r.VaccinationDate ?? r.scheduledDate ?? r.ScheduledDate))
+            .sort((a, b) =>
+                new Date(a.vaccinationDate ?? a.VaccinationDate ?? a.scheduledDate ?? a.ScheduledDate) -
+                new Date(b.vaccinationDate ?? b.VaccinationDate ?? b.scheduledDate ?? b.ScheduledDate)
+            )
+
+        const nextRecord  = pendingRecords[0] ?? null
+        const nextDueDate = nextRecord
+            ? new Date(nextRecord.vaccinationDate ?? nextRecord.VaccinationDate ?? nextRecord.scheduledDate ?? nextRecord.ScheduledDate)
+            : null
+        const nextVaccineName = nextRecord
+            ? (nextRecord.vaccineName ?? nextRecord.VaccineName ?? `Vaccine Dose ${nextRecord.doseNumber ?? nextRecord.DoseNumber}`)
+            : null
+
+        let vaccineStatus = 'Not Started'
+        if (!hasAnyRecords) {
+            vaccineStatus = 'Not Started'
+        } else if (allDone) {
+            vaccineStatus = 'Completed'
+        } else if (nextDueDate) {
+            const diffDays = Math.floor((nextDueDate - today) / 86400000)
+            if (diffDays < -14)      vaccineStatus = 'Overdue'
+            else if (diffDays <= 14) vaccineStatus = 'Due Soon'
+            else                     vaccineStatus = 'Up to Date'
+        } else {
+            vaccineStatus = 'Up to Date'
+        }
+
+        return { nextDueDate, nextVaccineName, vaccineStatus, completedCount }
+    }
+
+    const allChildren          = ref([])
+    const allVaccinationRecords = ref([])
+    const loadingChildren      = ref(false)
+    const loadError            = ref('')
+    const searchTerm           = ref('')
+    const statusFilter         = ref('')
+
+    // Fetches every VaccinationRecords row once so both the list and any
+    // opened record can filter it client-side, instead of hitting
+    // GET /api/VaccinationRecords/child/{id} separately (that endpoint's
+    // DTO doesn't reliably include AdministeredByName/NurseObservation/
+    // DoctorDiagnosis, unlike /all — confirmed working on the Doctor
+    // side and in HealthcareVaccinationRecords.vue).
+    async function fetchAllVaccinationRecords(children) {
+        try {
+            const recRes = await fetch(`${API_BASE}/VaccinationRecords/all`, { headers: authHeaders() })
+            if (!recRes.ok) throw new Error(`VaccinationRecords/all failed (${recRes.status})`)
+            return await recRes.json()
+        } catch {
+            const allRecords = []
+            for (const c of children) {
+                const childID = c.childID ?? c.ChildID
+                try {
+                    const r = await fetch(`${API_BASE}/VaccinationRecords/child/${childID}`, { headers: authHeaders() })
+                    if (r.ok) {
+                        const recs = await r.json()
+                        allRecords.push(...recs.map(rec => ({ ...rec, childID })))
+                    }
+                } catch {}
+            }
+            return allRecords
+        }
+    }
 
     async function fetchChildren() {
     loadingChildren.value = true
@@ -702,11 +796,26 @@
     try {
         const res = await fetch(`${API_BASE}/Children/all`, { headers: authHeaders() })
         if (!res.ok) throw new Error(`Children request failed (${res.status})`)
-        const data = await res.json()
-        allChildren.value = data.map(c => {
+        const children = await res.json()
+
+        const allRecords = await fetchAllVaccinationRecords(children)
+        allVaccinationRecords.value = allRecords
+
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+
+        allChildren.value = children.map(c => {
         const dob = c.birthDate ?? c.BirthDate ?? null
+        const childID = c.childID ?? c.ChildID
+
+        const childRecords = allRecords.filter(r =>
+            (r.childID ?? r.ChildID)?.toString().toLowerCase() === childID?.toString().toLowerCase()
+        )
+
+        const { nextDueDate, nextVaccineName, vaccineStatus, completedCount } = computeVaccineSummary(childRecords, today)
+
         return {
-    childID: c.childID ?? c.ChildID,
+    childID,
     name: `${c.firstName ?? c.FirstName ?? ''} ${c.lastName ?? c.LastName ?? ''}`.trim(),
     parentName: c.parentName ?? c.ParentName ?? '—',
     barangayNo: c.barangay ?? c.Barangay ?? null,
@@ -714,6 +823,10 @@
     allergies: c.allergies ?? c.Allergies ?? null,
     dateOfBirth: dob,
     ageLabel: dob ? ageLabelFromDOB(dob) : null,
+    nextDueDate,
+    nextVaccineName,
+    vaccineStatus,
+    completedCount,
 }
         })
     } catch (e) {
@@ -722,6 +835,16 @@
     } finally {
         loadingChildren.value = false
     }
+    }
+
+    function statusClass(status) {
+    return {
+        'Due Soon':    'bg-amber-100 text-amber-700',
+        'Overdue':     'bg-red-100 text-red-600',
+        'Up to Date':  'bg-blue-100 text-blue-700',
+        'Completed':   'bg-emerald-100 text-emerald-700',
+        'Not Started': 'bg-slate-100 text-slate-500',
+    }[status] || 'bg-slate-100 text-slate-600'
     }
 
     function ageLabelFromDOB(dobStr) {
@@ -738,91 +861,70 @@
 
     const filteredChildren = computed(() => {
     const term = searchTerm.value.trim().toLowerCase()
-    if (!term) return allChildren.value
-    return allChildren.value.filter(c => c.name.toLowerCase().includes(term))
+    let list = allChildren.value
+    if (term) list = list.filter(c => c.name.toLowerCase().includes(term))
+    if (statusFilter.value) list = list.filter(c => c.vaccineStatus === statusFilter.value)
+    return list
     })
 
     // ─────────────────────────────────────────────────────────────
-    // PAGINATION (client-side)
+    // PAGINATION (client-side) — "Show entries" size picker + a
+    // numbered page list with ellipsis, matching StaffPatientRecords.vue
     // ─────────────────────────────────────────────────────────────
     const currentPage = ref(1)
-    const pageSize = 8
-    const totalPages = computed(() => Math.max(1, Math.ceil(filteredChildren.value.length / pageSize)))
-    const pageStart = computed(() => (currentPage.value - 1) * pageSize)
-    const pagedChildren = computed(() => filteredChildren.value.slice(pageStart.value, pageStart.value + pageSize))
+    const pageSize = ref(10)
+    const totalPages = computed(() => Math.max(1, Math.ceil(filteredChildren.value.length / pageSize.value)))
+    const pageStart = computed(() => (currentPage.value - 1) * pageSize.value)
+    const pagedChildren = computed(() => filteredChildren.value.slice(pageStart.value, pageStart.value + pageSize.value))
+
+    // Compact page list: first, last, a window around the current page,
+    // and '...' for any gap — e.g. 1 ... 4 5 6 ... 12
+    const pageNumbers = computed(() => {
+        const total = totalPages.value
+        const current = currentPage.value
+        const delta = 1
+        const pages = []
+        for (let i = 1; i <= total; i++) {
+            if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
+                pages.push(i)
+            }
+        }
+        const withDots = []
+        let last = 0
+        for (const p of pages) {
+            if (last && p - last > 1) withDots.push('…')
+            withDots.push(p)
+            last = p
+        }
+        return withDots
+    })
+
+    watch([searchTerm, statusFilter, pageSize], () => {
+        currentPage.value = 1
+    })
+
+    watch(totalPages, (total) => {
+        if (currentPage.value > total) currentPage.value = total
+    })
 
     // ─────────────────────────────────────────────────────────────
     // SELECTED CHILD RECORD + VACCINATION HISTORY
-    // GET /api/VaccinationRecords/child/{childId} — confirmed real endpoint.
+    // History and the Next Vaccination summary are both derived from
+    // GET /api/VaccinationRecords/all filtered to this child, the same
+    // endpoint the patient list uses — /child/{id}'s DTO doesn't
+    // reliably carry AdministeredByName/NurseObservation/DoctorDiagnosis,
+    // which was showing those columns blank.
     // ─────────────────────────────────────────────────────────────
     const selectedChild  = ref(null)
     const history         = ref([])
     const loadingHistory  = ref(false)
     const historyError    = ref('')
 
-    const vaccinationTimeline = ref([])
-const loadingTimeline = ref(false)
-const timelineError = ref('')
-
-async function fetchVaccinationTimeline(childId) {
-    loadingTimeline.value = true
-    timelineError.value = ''
-
-    try {
-        const res = await fetch(
-            `${API_BASE}/VaccinationTimeline/child/${childId}`,
-            {
-                headers: authHeaders()
-            }
-        )
-
-        if (!res.ok) {
-            throw new Error(`VaccinationTimeline request failed (${res.status})`)
-        }
-
-        const data = await res.json()
-
-        vaccinationTimeline.value = data
-            .map(t => ({
-                timelineID: t.timelineID ?? t.TimelineID,
-                vaccineName: t.vaccineName ?? t.VaccineName ?? 'Unknown',
-                doseNumber: t.doseNumber ?? t.DoseNumber,
-                expectedDate: t.expectedDate ?? t.ExpectedDate,
-                scheduledDate: t.scheduledDate ?? t.ScheduledDate,
-                status: t.status ?? t.Status ?? 'Pending',
-                vaccinationRecordID:
-                    t.vaccinationRecordID ?? t.VaccinationRecordID
-            }))
-            .sort(
-                (a, b) =>
-                    new Date(a.scheduledDate) -
-                    new Date(b.scheduledDate)
-            )
-
-    } catch (e) {
-        console.error('fetchVaccinationTimeline:', e)
-
-        vaccinationTimeline.value = []
-        timelineError.value =
-            'Could not load the vaccination timeline.'
-    } finally {
-        loadingTimeline.value = false
-    }
-}
-
-const nextVaccination = computed(() => {
-    return vaccinationTimeline.value.find(
-        t => t.status === 'Pending'
-    )
-})
 async function openRecord(child) {
     selectedChild.value = { ...child }
 
     history.value = []
     historyError.value = ''
-
-    vaccinationTimeline.value = []
-    timelineError.value = ''
 
     loadingHistory.value = true
 
@@ -866,20 +968,39 @@ async function openRecord(child) {
         console.error('openRecord child details:', e)
     }
 
-    // Load timeline at the same time
-    fetchVaccinationTimeline(child.childID)
-
+    // Vaccination history + Next Vaccination summary — both computed
+    // from GET /api/VaccinationRecords/all filtered to this child (falls
+    // back to /child/{id} only if /all is unreachable), so the detail
+    // view always agrees with the list and reliably has
+    // administeredByName/nurseObservation/doctorDiagnosis populated.
     try {
-        // your existing vaccination history code...
-        const res = await fetch(
-            `${API_BASE}/VaccinationRecords/child/${child.childID}`,
-            { headers: authHeaders() }
-        )
+        let data
+        try {
+            const res = await fetch(`${API_BASE}/VaccinationRecords/all`, { headers: authHeaders() })
+            if (!res.ok) throw new Error(`VaccinationRecords/all request failed (${res.status})`)
+            const all = await res.json()
+            data = all.filter(r =>
+                (r.childID ?? r.ChildID)?.toString().toLowerCase() === child.childID?.toString().toLowerCase()
+            )
+        } catch {
+            const res = await fetch(
+                `${API_BASE}/VaccinationRecords/child/${child.childID}`,
+                { headers: authHeaders() }
+            )
+            if (!res.ok) throw new Error(`VaccinationRecords request failed (${res.status})`)
+            data = await res.json()
+        }
 
-        if (!res.ok)
-            throw new Error(`VaccinationRecords request failed (${res.status})`)
-
-        const data = await res.json()
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const { nextDueDate, nextVaccineName, vaccineStatus, completedCount } = computeVaccineSummary(data, today)
+        selectedChild.value = {
+            ...selectedChild.value,
+            nextDueDate,
+            nextVaccineName,
+            vaccineStatus,
+            completedCount,
+        }
 
         history.value = data
             .map(r => ({
@@ -927,6 +1048,7 @@ async function openRecord(child) {
                                 )
                         )),
             }))
+            .filter(r => r.vaccinationDate) // only actually-administered doses belong in History
             .sort(
                 (a, b) =>
                     new Date(b.vaccinationDate) -
@@ -947,6 +1069,7 @@ const groupedHistory = computed(() => {
 
     history.value.forEach(record => {
         const date = new Date(record.vaccinationDate)
+        if (isNaN(date)) return // skip anything without a valid administered date
 
         // Group records that happened on the same date
         const dateKey = date.toISOString().split('T')[0]
