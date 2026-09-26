@@ -3,10 +3,11 @@
 // The Admission Staff puts each Doctor/Nurse at a station and sends
 // checked-in patients to a station. A health worker can only vaccinate
 // the patient at their own station (the backend enforces the same rule).
+import { API_ORIGIN } from '@/utils/apiBase'
 import axios from 'axios'
 import { getUser } from '@/utils/auth'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const API = API_ORIGIN
 
 export const sameId = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
 

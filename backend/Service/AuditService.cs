@@ -78,7 +78,7 @@ namespace AndroidWebAPI.Services
                     Status = status,
                     UserName = userName,
                     Role = role,
-                    IpAddress = ctx?.Connection.RemoteIpAddress?.ToString(),
+                    IpAddress = ClientIp(ctx),
                     Device = DescribeDevice(ctx?.Request.Headers.UserAgent.ToString()),
                     OldValue = oldValue,
                     NewValue = newValue,
@@ -103,6 +103,26 @@ namespace AndroidWebAPI.Services
                 if (entry != null)
                     _context.Entry(entry).State = EntityState.Detached;
             }
+        }
+
+        // Phones reach the API through the website's dev server on this
+        // computer (frontend/vite.config.js), so the connection itself comes
+        // from this computer; the phone's own address is in X-Forwarded-For.
+        // That header is only trusted when the request came from this computer.
+        private static string? ClientIp(HttpContext? ctx)
+        {
+            var remote = ctx?.Connection.RemoteIpAddress;
+            if (remote != null && System.Net.IPAddress.IsLoopback(remote))
+            {
+                var forwarded = ctx!.Request.Headers["X-Forwarded-For"].ToString().Split(',')[0].Trim();
+                if (System.Net.IPAddress.TryParse(forwarded, out var phone))
+                    return Plain(phone);
+            }
+            return remote == null ? null : Plain(remote);
+
+            // "::ffff:192.168.1.3" -> "192.168.1.3"
+            static string Plain(System.Net.IPAddress ip) =>
+                (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip).ToString();
         }
 
         // "Chrome on Windows" style label — enough for an admin reading the

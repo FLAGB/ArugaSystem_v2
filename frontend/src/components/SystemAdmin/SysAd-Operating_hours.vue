@@ -1,5 +1,6 @@
 <script setup>
 
+import { API_ORIGIN } from '@/utils/apiBase'
 import axios from "axios"
 import { ref, computed, onMounted } from "vue"
 import AppSidebar from "./Components/AppSidebar.vue"
@@ -13,8 +14,8 @@ const props = defineProps({
 const isAdmin = computed(() => props.userRole === "Admin")
 
 /* ------------------------------- API config ------------------------------- */
-const scheduleApi = "http://localhost:57147/api/ClinicOperatingSchedule"
-const exceptionsApi = "http://localhost:57147/api/ClinicScheduleExceptions"
+const scheduleApi = `${API_ORIGIN}/api/ClinicOperatingSchedule`
+const exceptionsApi = `${API_ORIGIN}/api/ClinicScheduleExceptions`
 
 /* --------------------------------- Sidebar --------------------------------- */
 const isCollapsed = ref(false)

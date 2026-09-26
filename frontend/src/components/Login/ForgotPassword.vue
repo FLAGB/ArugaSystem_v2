@@ -1,11 +1,12 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import logoIcon from '@/assets/logo-icon.svg'
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
 const router = useRouter()
-const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:57147'}/api/auth/forgot-password`
+const API_BASE = `${API_ORIGIN}/api/auth/forgot-password`
 
 // step: 'request' -> 'verify' -> 'reset' -> 'done'
 const step = ref('request')

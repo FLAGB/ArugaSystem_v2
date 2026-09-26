@@ -29,6 +29,24 @@ by who uses it. The work is on the `Aruga-Polished` git branch.
   - The **Doctor/Nurse patient page** lists every linked parent/guardian with their relationship (the table shows "+1" when there is more than one); the **vaccination screen** shows who checked the child in and all guardians; the **printed vaccination card** lists all guardians.
   - In the **parent portal profile**, each child shows "You are Isabela's Grandmother" and everyone linked to the child (before, only Mother/Father/Guardian filled in).
   - Demo data: **lourdes.luna@demo.aruga.ph** is Isabela Cruz's grandmother (second guardian), to show this at the defense.
+- **More messages go by SMS, combined so they don't use up the load.**
+  - **Every reminder** (14 / 7 / 5 / 3 / 1 days before, and 1 / 5 / 14 / 30 days after a missed dose) now also goes by SMS: **one text per child per step**, listing all of that visit's vaccines, e.g. "Mia's vaccines (Penta 3, OPV 3, IPV 1, PCV 3) are due tomorrow, Mon, Sep 28." The app and email still get one notice per dose.
+  - **When a visit is finished** (Complete Visit, or Staff marking it Completed), parents get one text: the vaccines given today and the next vaccination date and vaccines.
+  - **"Record updated"** now also goes by SMS, with what changed ("Allergies: Egg (mild rash)"), so a parent can report a mistake.
+  - The most urgent texts are sent first, so if the daily limit (50) is reached, "due tomorrow" and "missed" texts still go out.
+  - Reminders for a later dose (e.g. Penta 2) wait while an earlier dose of the same vaccine is still missing; the overdue reminder for the earlier dose covers it.
+  - Demo and test accounts still never get real texts; the text they would get is written to the API window instead, so it can be shown.
+- **Aruga works on phones** (for QR check-in, and the whole parent portal).
+  - Pages no longer call `http://localhost:57147` (on a phone that means the phone itself). They call `/api` on the address the site was opened from, and the website passes those calls on to the API on the laptop (`frontend/vite.config.js`). `npm run dev` now also listens on the Wi-Fi.
+  - The Staff **Check-in QR** points at the laptop's network address even when staff open Aruga as `localhost`, and shows that address so parents can type it.
+  - **Scan the Clinic QR Code** button on the Check-in tab works on phones. Phones only allow a live camera view inside a website on https, so on the local (http) address the button opens the phone's camera to take a photo of the QR, and Aruga reads the code from the photo (tested with tilted, far-away and 24-megapixel photos). On https (or `localhost` on the laptop) it shows the live scanner. If the camera can't be opened, the next tap takes a photo instead. Scanning with the phone's camera app and typing the code still work.
+  - Parent pages fit a phone screen: the tabs share the width, the search box moves to its own line, and the Schedule list and calendar stack.
+  - The audit log records the phone's address and device (e.g. "Safari on iOS") instead of the laptop's.
+  - The floating Vue DevTools button is off by default. Setup steps: `backend/README.md` → "Using Aruga on phones".
+- **Doctors and Nurses can update a child's allergies and existing conditions** (Patients page → Medical Records → "Edit allergies / conditions").
+  - Only those two fields; the rest of the profile stays with the Admission Staff and the Administrator.
+  - "Existing Conditions" is now saved (before, the box always said "None reported" because nothing stored it). Database scripts add the `ExistingConditions` column.
+  - The change is recorded in the Audit Logs and the parent gets a "record updated" notice. Allergies and conditions show in the red warning on the vaccination screen, in the Staff patient drawer and in Admin Patient Management.
 - **Staff Patient Records: the "…" menu and parent logins.**
   - The "…" menu now opens in front of the table instead of being cut off by it.
   - **Deactivate Login / Reactivate Login** and **Reset Password** now work (they did nothing before). A deactivated parent can't sign in ("Account is inactive"); their children's records and reminders are unaffected. Reset shows a temporary password to give the parent (also emailed if they have a real email), and they must choose a new one at sign-in.

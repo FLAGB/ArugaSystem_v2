@@ -61,9 +61,12 @@
                 </div>
               </div>
 
-              <div v-if="child.allergies" class="mt-4 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg">
+              <div v-if="child.allergies || child.existingConditions" class="mt-4 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg">
                 <AlertTriangle class="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                <p class="text-sm text-red-700"><span class="font-semibold">Allergies:</span> {{ child.allergies }}</p>
+                <div class="text-sm text-red-700 space-y-0.5">
+                  <p v-if="child.allergies"><span class="font-semibold">Allergies:</span> {{ child.allergies }}</p>
+                  <p v-if="child.existingConditions"><span class="font-semibold">Existing conditions:</span> {{ child.existingConditions }}</p>
+                </div>
               </div>
 
               <div v-if="!atMyStation" class="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-100 rounded-lg">
@@ -248,6 +251,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
@@ -262,7 +266,7 @@ import { withRelationship, guardiansOf } from '@/utils/format'
 
 const router = useRouter()
 const route  = useRoute()
-const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const API = API_ORIGIN
 
 const queueId = computed(() => route.params.queueId)
 const childId = computed(() => route.query.child)
@@ -314,6 +318,7 @@ onMounted(async () => {
       parentName: c.parentName,
       guardians: guardiansOf(c.parents),
       allergies: c.allergies && !/^(none|n\/a|none known)$/i.test(c.allergies.trim()) ? c.allergies : null,
+      existingConditions: c.existingConditions && !/^(none|n\/a|none known)$/i.test(c.existingConditions.trim()) ? c.existingConditions : null,
     }
     queueNumber.value = queueRes?.data?.queueNumber ?? ''
     visit.value = queueRes?.data ?? null

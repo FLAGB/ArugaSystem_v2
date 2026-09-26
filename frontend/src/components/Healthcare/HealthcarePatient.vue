@@ -100,24 +100,56 @@
                   <h3 class="font-semibold text-slate-800">Medical Records</h3>
                   <p class="text-xs text-slate-400 mt-0.5">Medical information and health measurements</p>
                 </div>
-                <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
-                  <HeartPulse class="w-4 h-4 text-emerald-600" />
+                <div class="flex items-center gap-2">
+                  <button v-if="!healthEdit" @click="startEditHealthNotes"
+                    class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                    <Pencil class="w-3.5 h-3.5" /> Edit allergies / conditions
+                  </button>
+                  <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
+                    <HeartPulse class="w-4 h-4 text-emerald-600" />
+                  </div>
                 </div>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <p class="text-xs text-slate-400 mb-1.5">Allergies</p>
-                  <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
-                    {{ selectedChild.allergies || 'None reported' }}
+                <!-- Allergies and existing conditions: Doctors/Nurses can update
+                     these (e.g. an allergy found at the station); the parent
+                     gets a "record updated" notice. -->
+                <template v-if="healthEdit">
+                  <div>
+                    <p class="text-xs text-slate-400 mb-1.5">Allergies</p>
+                    <textarea v-model="healthEdit.allergies" rows="3" maxlength="500" placeholder="e.g. Egg (mild rash). Leave blank if none."
+                      class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
                   </div>
-                </div>
-                <div>
-                  <p class="text-xs text-slate-400 mb-1.5">Existing Conditions</p>
-                  <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
-                    {{ selectedChild.existingConditions || 'None reported' }}
+                  <div>
+                    <p class="text-xs text-slate-400 mb-1.5">Existing Conditions</p>
+                    <textarea v-model="healthEdit.existingConditions" rows="3" maxlength="500" placeholder="e.g. Asthma. Leave blank if none."
+                      class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
                   </div>
-                </div>
+                  <div class="col-span-2 flex items-center justify-end gap-2 -mt-1">
+                    <button @click="healthEdit = null" :disabled="healthEdit.saving"
+                      class="text-xs font-medium px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+                    <button @click="saveHealthNotes" :disabled="healthEdit.saving"
+                      class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                      <Loader2 v-if="healthEdit.saving" class="w-3.5 h-3.5 animate-spin" />
+                      <Check v-else class="w-3.5 h-3.5" /> Save
+                    </button>
+                  </div>
+                </template>
+                <template v-else>
+                  <div>
+                    <p class="text-xs text-slate-400 mb-1.5">Allergies</p>
+                    <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700 whitespace-pre-line">
+                      {{ selectedChild.allergies || 'None reported' }}
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-slate-400 mb-1.5">Existing Conditions</p>
+                    <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700 whitespace-pre-line">
+                      {{ selectedChild.existingConditions || 'None reported' }}
+                    </div>
+                  </div>
+                </template>
                 <div>
                   <p class="text-xs text-slate-400 mb-1.5">Birth Height</p>
                   <div class="px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
@@ -489,6 +521,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { getUser } from '@/utils/auth'
 import HealthcareSidebar from './Components/HealthcareSidebar.vue'
 import HealthcareHeader from './Components/HealthcareHeader.vue'
@@ -505,7 +538,7 @@ import {
   ListChecks
 } from 'lucide-vue-next'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const API = API_ORIGIN
 const router = useRouter()
 const route  = useRoute()
 
@@ -734,6 +767,7 @@ function closeRecord() {
 
 async function openRecord(child) {
   selectedChild.value = child
+  healthEdit.value = null
   loadingChildRecords.value = true
   childTimeline.value = []
   axios.get(`${API}/api/VaccinationTimeline/child/${child.childID}`)
@@ -821,6 +855,38 @@ async function saveRemarks(rec) {
     showToast(err.response?.data?.message || 'Failed to save remarks. Please try again.')
   } finally {
     savingRemarks.value = false
+  }
+}
+
+// ── EDIT ALLERGIES / EXISTING CONDITIONS ──────────────────────────────────
+// PATCH /api/Children/{id}/health-notes: only these two fields; the rest of
+// the profile is edited by the Admission Staff. Logged in the audit trail,
+// and the parent gets a "record updated" notice.
+const healthEdit = ref(null)   // { allergies, existingConditions, saving }
+
+function startEditHealthNotes() {
+  healthEdit.value = {
+    allergies:          selectedChild.value?.allergies || '',
+    existingConditions: selectedChild.value?.existingConditions || '',
+    saving: false,
+  }
+}
+
+async function saveHealthNotes() {
+  const h = healthEdit.value
+  h.saving = true
+  try {
+    const { data } = await axios.patch(`${API}/api/Children/${selectedChild.value.childID}/health-notes`, {
+      allergies:          h.allergies.trim() || null,
+      existingConditions: h.existingConditions.trim() || null,
+    })
+    selectedChild.value = { ...selectedChild.value, allergies: data.allergies, existingConditions: data.existingConditions }
+    healthEdit.value = null
+    showToast(data.changed?.length ? "Saved. The parent was notified of the change." : 'No changes')
+  } catch (err) {
+    console.error('saveHealthNotes error:', err)
+    showToast(err.response?.data?.message || 'Could not save. Please try again.')
+    h.saving = false
   }
 }
 

@@ -21,6 +21,54 @@ Lifecycle System, for Leveriza Health Center.
 
 Then start the frontend (`frontend` folder): `npm install` once, then `npm run dev`, and open http://localhost:5173.
 
+## Using Aruga on phones (QR check-in)
+
+`npm run dev` also makes the website reachable from phones on the same
+network. It prints two addresses:
+
+```
+➜  Local:   http://localhost:5173/
+➜  Network: http://192.168.1.3:5173/
+```
+
+Phones use the **Network** address. Only the website needs to be reachable:
+it passes every `/api` request on to the API on this computer
+(`frontend/vite.config.js`).
+
+1. Put the laptop and the phones on the **same network**. School and café
+   Wi-Fi often block devices from reaching each other, so the safest choice
+   is a **mobile hotspot**: connect the laptop and the phones to one phone's
+   hotspot (or turn on Windows' *Mobile hotspot* on the laptop).
+2. Start the API (`dotnet run`) and the website (`npm run dev`) **after**
+   joining that network.
+3. If Windows asks whether Node.js may use the network, tick **Private and
+   Public** and click **Allow**.
+4. On the laptop, open **Staff → Check-in QR**. The QR points at the laptop's
+   network address (shown under "Address phones open"), even when Aruga is
+   open as `localhost`. If the laptop is on more than one network, pick the one
+   the phones are on.
+5. Parents check in either way:
+   - In Aruga: **Check-in → Scan the Clinic QR Code**. On this local (http)
+     address the phone's camera opens to take a photo of the QR, and Aruga
+     reads the code from the photo. (Phones only allow a live camera view
+     inside a website on https.)
+   - Or with the **phone's camera app**: scan the QR, tap the link, sign in.
+
+   Then they pick their children. Typing the 6-letter code under the QR also
+   works.
+6. Check-in only works on a vaccination day during check-in hours. For a demo
+   at another time, first add that date under System Admin → Operating Hours
+   → Add Exception (open, with hours that cover the demo).
+
+If a phone can't open the page: make sure it's on the same network, type the
+Network address into the phone's browser, and check that Windows Firewall
+allowed Node.js. For a real deployment the site would run on a server with its
+own address and https; then the Scan button shows a live camera view instead of
+taking a photo.
+
+The Vue DevTools button is off so it doesn't cover pages; to show it, start
+the website with `$env:VUE_DEVTOOLS="on"; npm run dev` (PowerShell).
+
 ## Email and SMS
 
 The system sends Forgot Password codes, vaccine reminders (14, 7, 5, 3 and 1 day
@@ -31,18 +79,21 @@ they are set up.
 
 | Message | App | Email | SMS |
 |---|:-:|:-:|:-:|
-| Reminders 14 / 7 / 5 / 3 days before, overdue 5 / 14 / 30 days | ✓ | ✓ | |
-| Reminder **1 day before** ("due tomorrow") and **1 day after** ("missed") | ✓ | ✓ | ✓ |
+| Reminders 14 / 7 / 5 / 3 / 1 days before, and 1 / 5 / 14 / 30 days after a missed dose | ✓ per dose | ✓ per dose | ✓ one text per child per step, listing the visit's vaccines |
+| "Vaccine given", with the next due date | ✓ per dose | ✓ per dose | ✓ one text when the visit is finished: vaccines given + next vaccination |
+| "Record updated" (what changed, so the parent can report a mistake) | ✓ | ✓ | ✓ |
 | Vaccine out of stock / back in stock | ✓ | ✓ | ✓ |
-| Forgot Password code | | email or SMS, the person chooses | |
-| "Vaccine given", "record updated", new-account and password-reset emails | ✓ | ✓ | |
-| Announcements | ✓ | if ticked | if ticked |
-| Weekly stock check (to Staff and Admin) | ✓ | ✓ | |
 | Health center closed (admin adds a closure under Operating Hours) | ✓ all parents | families due that day | families due that day |
+| Announcements | ✓ | if ticked | if ticked |
+| Forgot Password code | | email or SMS, the person chooses | |
+| New-account and password-reset emails | | ✓ | |
+| Weekly stock check (to Staff and Admin) | ✓ | ✓ | |
 
-SMS is kept to the messages where timing matters, so it fits a free plan.
-`Sms:DailyLimit` (default 50) stops texts for the rest of the day once reached;
-the app and email copies still go out.
+Texts are combined so one visit (often 3–4 vaccines) doesn't become 3–4 texts.
+`Sms:DailyLimit` (default 50) stops texts for the rest of the day once reached,
+most urgent first ("due tomorrow", "missed"); the app and email copies still go
+out. Each text uses the load of the phone running TextBee, so keep it loaded
+(an all-network unli-text promo is best).
 
 **Email: Gmail (free, about 500 emails a day)**
 1. Sign in to arugahealthcenter@gmail.com and turn on **2-Step Verification**

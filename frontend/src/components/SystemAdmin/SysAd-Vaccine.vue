@@ -1,4 +1,5 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import axios from "axios"
 import { ref, computed, onMounted } from "vue"
 import AppSidebar from "./Components/AppSidebar.vue"
@@ -6,9 +7,9 @@ import AppHeader from "./Components/AppHeader.vue"
 import { downloadCSV, toISODate } from "@/utils/format"
 
 /* ------------------------------- API config ------------------------------- */
-const api = "http://localhost:57147/api/Vaccines"
-const doseApi = "http://localhost:57147/api/VaccineDoses"
-const ruleApi = "http://localhost:57147/api/VaccinationScheduleRules"
+const api = `${API_ORIGIN}/api/Vaccines`
+const doseApi = `${API_ORIGIN}/api/VaccineDoses`
+const ruleApi = `${API_ORIGIN}/api/VaccinationScheduleRules`
 
 /* ------------------------- Age preset conversion (UI only) -------------------------
    The database/API still only ever sees recommendedAgeDays / minimumAgeDays /

@@ -1,9 +1,10 @@
+import { API_ORIGIN } from '@/utils/apiBase'
 import axios from "axios"
 import router from "@/router"
 import { logout } from "@/utils/auth"
 
 const api = axios.create({
-  baseURL: `${import.meta.env.VITE_API_URL || "http://localhost:57147"}/api`
+  baseURL: `${API_ORIGIN}/api`
 })
 
 api.interceptors.request.use(config => {

@@ -612,8 +612,9 @@ const reminderSchedule = {
             <p class="text-sm text-slate-600">
               Reminders are generated automatically every morning (8:00 AM) for each child's next due dose,
               and follow-ups are sent when a dose is missed. Each dose gets at most one reminder per step.
-              They go to every linked parent's notification bell and by email. To stay within the free SMS plan (TextBee: 50 texts a day),
-              only the "due tomorrow" and "missed yesterday" reminders, stock notices, password codes, and announcements you tick also go by SMS.
+              They go to every linked parent's notification bell and by email, and by SMS as one text per child per step
+              that lists all of that visit's vaccines. Texts stop for the day once the daily limit (TextBee: 50) is reached;
+              the most urgent ones ("due tomorrow", "missed yesterday") are sent first.
             </p>
             <div class="flex flex-wrap gap-2 text-xs font-semibold">
               <span class="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700">In-app: on</span>
@@ -639,8 +640,8 @@ const reminderSchedule = {
             <div>
               <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3">Also sent automatically</h3>
               <ul class="text-sm text-slate-600 space-y-1 list-disc pl-5">
-                <li>"Vaccine administered" to the parent when a dose is recorded, with the next due date</li>
-                <li>"Record updated" to the parent when a child's details are changed</li>
+                <li>"Vaccine administered" to the parent when a dose is recorded, with the next due date; when the visit is finished, one text lists the vaccines given and the next vaccination date</li>
+                <li>"Record updated" to the parent (app, email and SMS) when a child's details are changed, so they can report a mistake</li>
                 <li>"Temporarily unavailable" to parents of children due for a vaccine that ran out, and "available again" once it's restocked</li>
                 <li>"Health center closed" to every parent when a closed day is added under Operating Hours (by email and SMS too for families with a child due that day, with the new date)</li>
                 <li>Low-stock alerts to healthcare workers and the Admission Staff when a batch drops below its minimum</li>

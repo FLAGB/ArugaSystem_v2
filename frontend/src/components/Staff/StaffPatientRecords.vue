@@ -1,4 +1,5 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, reactive, computed, watch, onMounted, onUnmounted, h } from "vue";
 import { useRoute } from "vue-router";
 import {
@@ -32,7 +33,7 @@ onMounted(() => {
    have a shared axios instance with baseURL / auth headers configured, 
    swap this `axios` import for that instance.)
 ========================================================================= */
-const API_BASE = "http://localhost:57147/api";
+const API_BASE = `${API_ORIGIN}/api`;
 const api = {
   getAllParents:                ()            => axios.get(`${API_BASE}/Parents/all`).then(r => r.data),
   createParent:                 (payload)     => axios.post(`${API_BASE}/Parents`, payload).then(r => r.data),
@@ -153,6 +154,7 @@ const mapChild = (c, overview = null) => {
     birthPlace:c.placeOfBirth||"—", age:calculateAge(birth), sex:c.sex||"—",
     height:c.birthHeight?`${c.birthHeight} cm`:"—", weight:c.birthWeight?`${c.birthWeight} kg`:"—",
     allergies:c.allergies||"",
+    existingConditions:c.existingConditions||"",
     familyNo:c.familyNo||"",
     vaccStatus, nextVaccine, status:"Active", address:c.address||"—", barangay:c.barangay||"—", notifyMode:"primary",
     raw:c, // original API record, kept so edits that don't touch every field don't lose data
@@ -1331,6 +1333,8 @@ async function submitChildRegister() {
             <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Birth Place</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.birthPlace }}</p></div>
             <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Birth Height</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.height }}</p></div>
             <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Birth Weight</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.weight }}</p></div>
+            <div class="rounded-xl bg-stone-50 p-3 col-span-2"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Allergies</p><p class="text-[13px] font-medium mt-0.5" :class="selectedChild.allergies ? 'text-rose-700' : ''">{{ selectedChild.allergies || "None recorded" }}</p></div>
+            <div class="rounded-xl bg-stone-50 p-3 col-span-2"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Existing Conditions</p><p class="text-[13px] font-medium mt-0.5" :class="selectedChild.existingConditions ? 'text-rose-700' : ''">{{ selectedChild.existingConditions || "None recorded" }}</p></div>
           </div>
           <div class="border-t border-stone-200 pt-5">
             <p class="text-[13px] font-semibold mb-3">Vaccination Summary</p>

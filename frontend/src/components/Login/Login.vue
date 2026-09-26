@@ -1,10 +1,11 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import logoIcon from "@/assets/logo-icon.svg"
 import { ref, computed } from "vue"
 import { useRouter, useRoute } from "vue-router"
 import axios from "axios"
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:57147'}/api/auth`
+const API_BASE_URL = `${API_ORIGIN}/api/auth`
 
 const router = useRouter()
 const route = useRoute()

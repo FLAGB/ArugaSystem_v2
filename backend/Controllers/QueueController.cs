@@ -107,11 +107,12 @@ namespace AndroidWebAPI.Controllers
         // child in front of a worker nobody sent them to.)
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpPatch("{queueId}/complete")]
-        public async Task<IActionResult> Complete(Guid queueId)
+        public async Task<IActionResult> Complete(Guid queueId, [FromServices] AndroidWebAPI.Services.ParentNotifier notifier)
         {
             var entry = await _context.Queues.FindAsync(queueId);
             if (entry == null) return NotFound();
 
+            bool wasCompleted = entry.Status == "Completed";
             entry.Status = "Completed";
             entry.UpdatedAt = DateTime.Now;
 
@@ -126,6 +127,10 @@ namespace AndroidWebAPI.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            // One text per child: vaccines given today and the next date
+            if (!wasCompleted)
+                await AndroidWebAPI.Services.VisitSummary.SendAsync(_context, notifier, entry.QueueID);
 
             return Ok(new { message = "Visit completed.", queueID = entry.QueueID });
         }
@@ -417,12 +422,15 @@ public async Task<IActionResult> GetAll()
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateStatus(
             Guid id,
-            [FromBody] UpdateQueueStatusRequest request)
+            [FromBody] UpdateQueueStatusRequest request,
+            [FromServices] AndroidWebAPI.Services.ParentNotifier notifier)
         {
             var queue = await _queueRepository.GetByIdAsync(id);
 
             if (queue == null)
                 return NotFound();
+
+            bool finishing = request.Status == "Completed" && queue.Status != "Completed";
 
             // "In Progress" means "at a station with a health worker", so it
             // can only be set by sending the visit to a station.
@@ -446,6 +454,10 @@ public async Task<IActionResult> GetAll()
             }
 
             await _queueRepository.UpdateAsync(queue);
+
+            // Visit finished: one text per child with today's vaccines and the next date
+            if (finishing)
+                await AndroidWebAPI.Services.VisitSummary.SendAsync(_context, notifier, queue.QueueID);
 
             // Map to the same DTO every other endpoint here returns —
             // returning the raw entity serializes its Parent/QueueChildren

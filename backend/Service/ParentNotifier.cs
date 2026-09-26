@@ -59,17 +59,34 @@ namespace AndroidWebAPI.Services
             _context.Notifications.Add(inApp);
             tally.InApp++;
 
+            string text = smsText ?? $"Aruga - Leveriza Health Center: {inApp.Title}. {fullMessage}";
+
             // Demo parents (DemoSeed.sql, IDs starting A2A2) and test records
             // (…@example.com, …@demo.…) have made-up emails and numbers that
             // could belong to real people, so they only get the in-app notice.
-            if (IsDemo(parent)) return;
+            // The text they would get is written to the console, to check it.
+            if (IsDemo(parent))
+            {
+                if (sms) await _sender.SendSmsAsync(parent.ContactNo, text, demoRecipient: true);
+                return;
+            }
 
             if (email && !string.IsNullOrWhiteSpace(parent.Email) &&
                 await _sender.SendEmailAsync(parent.Email, inApp.Title, $"Hi {parent.FirstName},\n\n{fullMessage}"))
                 tally.Emails++;
 
-            if (sms && await _sender.SendSmsAsync(parent.ContactNo,
-                    smsText ?? $"Aruga - Leveriza Health Center: {inApp.Title}. {fullMessage}"))
+            if (sms && await _sender.SendSmsAsync(parent.ContactNo, text))
+                tally.Texts++;
+        }
+
+        // A text only, for summaries that combine several app/email notices
+        // into one SMS (reminders for a whole visit, the visit summary). Demo
+        // and test parents are skipped as in NotifyAsync; the text is written
+        // to the console instead, so it can still be checked.
+        public async Task TextAsync(Parent parent, string text, Delivery tally)
+        {
+            bool demo = IsDemo(parent);
+            if (await _sender.SendSmsAsync(parent.ContactNo, text, demoRecipient: demo) && !demo)
                 tally.Texts++;
         }
 

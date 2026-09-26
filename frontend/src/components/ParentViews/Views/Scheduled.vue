@@ -22,8 +22,10 @@
               <p class="text-2xl mb-2">👶</p>
               <p class="font-bold text-sm">Select a child from Family Profiles to view their schedule.</p>
             </div>
-            <div v-else class="flex gap-5 items-start">
-              <div class="w-[42%] shrink-0 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" style="max-height: 680px;">
+            <!-- Side by side on a computer; on a phone the dose list comes first
+                 (scrolling on its own) and the calendar below it -->
+            <div v-else class="flex flex-col lg:flex-row gap-5 lg:items-start">
+              <div class="w-full lg:w-[42%] shrink-0 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-h-[55vh] lg:max-h-[680px]">
                 <div class="px-6 pt-6 pb-4 border-b border-slate-50">
                   <p class="text-[10px] font-bold text-emerald-500 uppercase tracking-[0.2em]">Vaccination Schedule</p>
                   <p class="text-xs text-slate-400 mt-0.5">{{ selectedChild.firstName }} · {{ computedVaccineList.length }} doses</p>
@@ -60,7 +62,7 @@
                   </template>
                 </div>
               </div>
-              <div class="flex-1 flex flex-col gap-4 sticky top-22">
+              <div class="w-full lg:flex-1 flex flex-col gap-4 lg:sticky lg:top-22">
                 <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-7">
                   <div v-if="selectedVax" class="flex items-center gap-3 mb-6 pb-5 border-b border-slate-50">
                     <div class="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center text-white text-sm">💉</div>

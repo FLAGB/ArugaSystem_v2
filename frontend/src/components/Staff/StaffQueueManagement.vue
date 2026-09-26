@@ -175,6 +175,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted } from "vue";
 import axios from "axios";
 import {
@@ -184,7 +185,7 @@ import StaffSidebar from "./StaffSidebar.vue";
 import StaffTopbar from "./StaffTopbar.vue";
 import { withRelationship } from "@/utils/format";
 
-const API_BASE = "http://localhost:57147/api";
+const API_BASE = `${API_ORIGIN}/api`;
 
 // Unlike the Dashboard (which calls GET /api/Queue/today, scoped
 // server-side to today), this page is the intentional full-history view —

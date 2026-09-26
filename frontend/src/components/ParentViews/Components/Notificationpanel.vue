@@ -51,10 +51,11 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
-const API_BASE_URL = 'http://localhost:57147'
+const API_BASE_URL = API_ORIGIN
 
 // parentData is fetched/owned by whichever page renders this component
 // (see HARD RULE 3) and passed down as a prop, just for the parentID

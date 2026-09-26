@@ -1,4 +1,5 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import {
@@ -14,7 +15,7 @@ import { withRelationship } from "@/utils/format";
 
 const router = useRouter();
 
-const API_BASE = "http://localhost:57147/api";
+const API_BASE = `${API_ORIGIN}/api`;
 
 const waitingCount = computed(() =>
   queue.value.filter(q => q.status === "Waiting").length

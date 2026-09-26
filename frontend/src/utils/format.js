@@ -1,6 +1,6 @@
 // Small shared formatting helpers for dates, ages and CSV export.
 
-export const API_BASE = `${(import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')}/api`
+export { API_BASE } from './apiBase'
 
 // "2026-09-25" in local time (not UTC — toISOString() would shift the day
 // for Philippine time before 8 AM).

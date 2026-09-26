@@ -10,8 +10,9 @@
 //           the next 7 days are told not to come for that dose yet, and are
 //           told again once it's back in stock (see StockNotices.cs).
 //
-// Every notice goes to the parent's notification bell AND by email/SMS
-// (ParentNotifier), to every linked parent who accepts notifications.
+// Every notice goes to the parent's notification bell and by email, one per
+// dose, to every linked parent who accepts notifications. Texts are combined:
+// one SMS per child per reminder step, listing that visit's vaccines.
 //
 // Due dates come from dbo.VaccinationTimeline, the same schedule parents
 // and health workers see in the app (it is recalculated whenever a dose is
@@ -96,7 +97,18 @@ public class NotificationGeneratorService : BackgroundService
             .Where(t => t.Status != "Completed" && t.Status != "Cancelled"
                      && t.ScheduledDate <= today.AddDays(PreReminders.Max())
                      && t.ScheduledDate >= today.AddDays(-StopAfterDaysLate))
+            .OrderBy(t => t.ScheduledDate).ThenBy(t => t.VaccineID).ThenBy(t => t.DoseNumber)
             .ToListAsync();
+
+        // The earliest dose of each vaccine a child still hasn't had. A later
+        // dose isn't reminded about while an earlier one is missing (Penta 2
+        // can't be given before Penta 1); the overdue reminder covers it.
+        var firstOpenDose = (await context.VaccinationTimelines
+                .Where(t => t.Status == "Pending" || t.Status == "Missed")
+                .GroupBy(t => new { t.ChildID, t.VaccineID })
+                .Select(g => new { g.Key.ChildID, g.Key.VaccineID, Dose = g.Min(t => t.DoseNumber) })
+                .ToListAsync())
+            .ToDictionary(x => (x.ChildID, x.VaccineID), x => x.Dose);
 
         // Keys of notifications that already exist, for fast duplicate checks
         var sentKeys = (await context.Notifications
@@ -109,10 +121,17 @@ public class NotificationGeneratorService : BackgroundService
         var tally = new ParentNotifier.Delivery();
         var parentsByChild = new Dictionary<Guid, List<Parent>>();
 
+        // Texts: ONE per parent, child and reminder step, listing every vaccine
+        // of that visit ("Penta 2, OPV 2, PCV 2") instead of one text per dose.
+        var texts = new Dictionary<(Guid Parent, Guid Child, string Type, DateTime Date), SmsReminder>();
+
         foreach (var entry in due)
         {
             var child = entry.Child;
             if (child == null) continue;
+
+            if (firstOpenDose.TryGetValue((entry.ChildID, entry.VaccineID), out var firstDose) && entry.DoseNumber > firstDose)
+                continue;
 
             if (!parentsByChild.TryGetValue(child.ChildID, out var parents))
                 parentsByChild[child.ChildID] = parents = await notifier.ParentsOfChildAsync(child.ChildID);
@@ -170,16 +189,8 @@ public class NotificationGeneratorService : BackgroundService
                 continue;
             }
 
-            // Every reminder goes to the app and by email. Texts are limited
-            // (TextBee free plan: 50 a day), so only the two that need action
-            // right away also go by SMS: "due tomorrow" and "missed yesterday".
-            string? smsText = type switch
-            {
-                "ReminderDay" => $"Leveriza Health Center: {child.FirstName}'s {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} is due TOMORROW, {entry.ScheduledDate:MMM d}. See you at the clinic ({clinicHoursShort}).",
-                "OverdueMiss" => $"Leveriza Health Center: {child.FirstName} missed {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} on {entry.ScheduledDate:MMM d}. Please visit on the next vaccination day ({clinicHoursShort}).",
-                _ => null,
-            };
-
+            // Each dose gets its own notice in the app and by email; the text
+            // for the whole visit is sent after the loop.
             foreach (var parent in parents)
             {
                 if (!sentKeys.Add(Key(parent.ParentID, child.ChildID, entry.VaccineID, entry.DoseNumber, type)))
@@ -195,11 +206,21 @@ public class NotificationGeneratorService : BackgroundService
                     Message       = message,
                     ScheduledDate = entry.ScheduledDate,
                     IsRead        = false,
-                }, tally, sms: smsText != null, smsText: smsText);
+                }, tally, sms: false);
+
+                var textKey = (parent.ParentID, child.ChildID, type, entry.ScheduledDate.Date);
+                if (!texts.TryGetValue(textKey, out var text))
+                    texts[textKey] = text = new SmsReminder(parent, child, type, entry.ScheduledDate.Date, daysUntil);
+                text.Vaccines.Add($"{entry.Vaccine?.Abbreviation ?? vaccineName} {entry.DoseNumber}");
             }
         }
 
         await context.SaveChangesAsync();
+
+        // Most urgent first ("due tomorrow", "missed yesterday"...), so if the
+        // daily SMS limit is reached it's the 14- and 30-day texts that wait.
+        foreach (var text in texts.Values.OrderBy(t => Math.Abs(t.DaysUntil)).ThenBy(t => t.DaysUntil))
+            await notifier.TextAsync(text.Parent, text.Build(clinicHoursShort), tally);
 
         var stock = await StockNotices.RunAsync(context, notifier);
 
@@ -219,6 +240,34 @@ public class NotificationGeneratorService : BackgroundService
 
     private static string Key(Guid? parentId, Guid? childId, int? vaccineId, int? doseNumber, string type)
         => $"{parentId}|{childId}|{vaccineId}|{doseNumber}|{type}";
+
+    // One reminder text: a child's vaccines due (or missed) on one date.
+    private sealed class SmsReminder(Parent parent, Child child, string type, DateTime date, int daysUntil)
+    {
+        public Parent Parent { get; } = parent;
+        public int DaysUntil { get; } = daysUntil;
+        public List<string> Vaccines { get; } = new();
+
+        // e.g. "Leveriza Health Center: Isabela's vaccines (Penta 2, OPV 2, PCV 2)
+        // are due in 7 days, Mon, Oct 12. Vaccinations: Mon, Wed, Fri, 8:00 AM - 12:00 PM."
+        public string Build(string hours)
+        {
+            string list = string.Join(", ", Vaccines);
+            bool many = Vaccines.Count > 1;
+            string name = child.FirstName;
+
+            if (DaysUntil >= 1)
+            {
+                string when = DaysUntil == 1 ? "tomorrow" : $"in {DaysUntil} days";
+                return $"Leveriza Health Center: {name}'s {(many ? "vaccines" : "vaccine")} ({list}) {(many ? "are" : "is")} due {when}, {date:ddd, MMM d}. Vaccinations: {hours}.";
+            }
+
+            int daysLate = -DaysUntil;
+            return type == "OverdueMiss"
+                ? $"Leveriza Health Center: {name} missed {list} on {date:ddd, MMM d}. Please come on the next vaccination day ({hours})."
+                : $"Leveriza Health Center: {name}'s {list} {(many ? "are" : "is")} {daysLate} days overdue (due {date:MMM d}). Please come on the next vaccination day ({hours}).";
+        }
+    }
 
     private static string PreDueType(int daysBefore) => daysBefore switch
     {

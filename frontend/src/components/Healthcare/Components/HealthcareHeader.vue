@@ -82,6 +82,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import { Bell } from 'lucide-vue-next'
@@ -91,7 +92,7 @@ defineProps({
   title: { type: String, default: '' },
 })
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const API = API_ORIGIN
 
 // ── Signed-in worker ─────────────────────────────────────────
 // UserType holds the position ("Doctor" / "Nurse") for accounts created

@@ -1,4 +1,5 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 import AppSidebar from './Components/AppSidebar.vue'
@@ -24,7 +25,7 @@ import AppHeader from './Components/AppHeader.vue'
       different property name (e.g. `IsActive` serialized differently),
       update the one line inside isVaccineActive().
 ========================================================================= */
-const API_BASE = 'http://localhost:57147/api'
+const API_BASE = `${API_ORIGIN}/api`
 const api = {
   getInventory:          ()          => axios.get(`${API_BASE}/VaccineInventory`).then(r => r.data),
   getInventoryByVaccine: (vaccineId) => axios.get(`${API_BASE}/VaccineInventory/vaccine/${vaccineId}`).then(r => r.data),

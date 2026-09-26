@@ -482,6 +482,7 @@ const saveLink = async () => {
               <div><p class="text-xs text-slate-500">Birth Weight / Length</p><p class="text-sm font-medium text-slate-900">{{ selectedPatient.birthWeight ? selectedPatient.birthWeight + ' kg' : '—' }} / {{ selectedPatient.birthHeight ? selectedPatient.birthHeight + ' cm' : '—' }}</p></div>
               <div><p class="text-xs text-slate-500">Place of Birth</p><p class="text-sm font-medium text-slate-900">{{ selectedPatient.placeOfBirth || '—' }}</p></div>
               <div><p class="text-xs text-slate-500">Allergies</p><p class="text-sm font-medium" :class="selectedPatient.allergies ? 'text-rose-600' : 'text-slate-900'">{{ selectedPatient.allergies || 'None recorded' }}</p></div>
+              <div><p class="text-xs text-slate-500">Existing Conditions</p><p class="text-sm font-medium" :class="selectedPatient.existingConditions ? 'text-rose-600' : 'text-slate-900'">{{ selectedPatient.existingConditions || 'None recorded' }}</p></div>
               <div class="col-span-2"><p class="text-xs text-slate-500">Address</p><p class="text-sm font-medium text-slate-900">{{ selectedPatient.address || '—' }}</p></div>
             </div>
           </div>

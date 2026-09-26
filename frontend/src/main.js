@@ -5,8 +5,20 @@ import axios from 'axios'
 import App from './App.vue'
 import router from '@/router'
 import { getToken, logout } from '@/utils/auth'
+import { API_ORIGIN } from '@/utils/apiBase'
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')
+// Is this URL a call to our API? (API_ORIGIN is empty when the API is reached
+// through this site's own /api path — see utils/apiBase.js.)
+function isApiUrl(url) {
+  try {
+    const u = new URL(url, window.location.href)
+    return API_ORIGIN
+      ? u.href.startsWith(`${API_ORIGIN}/`)
+      : u.origin === window.location.origin && u.pathname.startsWith('/api/')
+  } catch {
+    return false
+  }
+}
 
 // A sign-in lasts 8 hours. After that the API answers 401 to every call, so
 // instead of pages silently showing nothing, go back to the login page and
@@ -49,7 +61,7 @@ const nativeFetch = window.fetch.bind(window)
 window.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input?.url || ''
   const token = getToken()
-  const toApi = url.startsWith(API_ORIGIN)
+  const toApi = isApiUrl(url)
 
   if (token && toApi) {
     const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined) || {})

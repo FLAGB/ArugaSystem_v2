@@ -89,6 +89,7 @@ namespace AndroidWebAPI.Controllers
                     barangay = c.Barangay,
                     familyNo = c.FamilyNo,
                     allergies = c.Allergies,
+                    existingConditions = c.ExistingConditions,
                     birthWeight = c.BirthWeight,
                     birthHeight = c.BirthHeight,
                     createdAt = c.CreatedAt,
@@ -169,6 +170,7 @@ namespace AndroidWebAPI.Controllers
                     address = child.Address,
                     healthCenter = child.HealthCenter,
                     allergies = child.Allergies,
+                    existingConditions = child.ExistingConditions,
                     birthHeight = child.BirthHeight,
                     birthWeight = child.BirthWeight,
                     parents = child.ParentRelationships.Select(r => new
@@ -223,30 +225,7 @@ namespace AndroidWebAPI.Controllers
                     oldValue: changes.Count == 0 ? null : string.Join("; ", changes.Select(c => $"{c.Field}: {c.Old}")),
                     newValue: changes.Count == 0 ? null : string.Join("; ", changes.Select(c => $"{c.Field}: {c.New}")));
 
-                // Objective 3 of the study: parents get a confirmation whenever
-                // their child's information is changed.
-                if (changes.Count > 0)
-                {
-                    var tally = new ParentNotifier.Delivery();
-                    var lines = string.Join("\n", changes.Select(c => $"• {c.Field}: {c.Old} → {c.New}"));
-                    bool rescheduled = changes.Any(c => c.Field == "Birth date");
-
-                    foreach (var parent in await _notifier.ParentsOfChildAsync(id))
-                    {
-                        await _notifier.NotifyAsync(parent, new Notification
-                        {
-                            ChildID = id,
-                            Type = "RecordUpdated",
-                            Title = $"{updated.FirstName}'s record was updated",
-                            Message =
-                                $"These details in {updated.FirstName} {updated.LastName}'s health record were changed:\n{lines}" +
-                                (rescheduled ? "\n\nThe vaccination schedule was adjusted to the corrected birth date. Please check the Schedule page." : "") +
-                                "\n\nIf anything looks wrong, please tell Leveriza Health Center on your next visit.",
-                            IsRead = false,
-                        }, tally, sms: false);
-                    }
-                    await _context.SaveChangesAsync();
-                }
+                await NotifyRecordChangedAsync(id, updated, changes);
 
                 return Ok(new { message = "Child updated successfully.", changed = changes.Select(c => c.Field) });
             }
@@ -254,6 +233,86 @@ namespace AndroidWebAPI.Controllers
             {
                 return StatusCode(500, new { message = "An error occurred: " + ex.Message });
             }
+        }
+
+        // ── UPDATE: PATCH /api/Children/{id}/health-notes ─────────
+        // Doctors and Nurses may update a child's allergies and existing
+        // conditions (e.g. an allergy found at the station). The rest of the
+        // profile stays with the Admission Staff and the Administrator.
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
+        [HttpPatch("{id}/health-notes")]
+        public async Task<IActionResult> UpdateHealthNotes(Guid id, [FromBody] AndroidWebAPI.DTOs.UpdateHealthNotesDto dto)
+        {
+            static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+            string? allergies = Clean(dto.Allergies), conditions = Clean(dto.ExistingConditions);
+            if ((allergies?.Length ?? 0) > 500 || (conditions?.Length ?? 0) > 500)
+                return BadRequest(new { message = "Allergies and existing conditions can each be up to 500 characters." });
+
+            var before = await _context.Children.AsNoTracking().FirstOrDefaultAsync(c => c.ChildID == id);
+            var child = await _context.Children.FirstOrDefaultAsync(c => c.ChildID == id);
+            if (before == null || child == null)
+                return NotFound(new { message = "Child not found." });
+
+            child.Allergies = allergies;
+            child.ExistingConditions = conditions;
+            child.UpdatedAt = DateTime.Now;
+            await _context.SaveChangesAsync();
+
+            var changes = DescribeChanges(before, child);
+            if (changes.Count > 0)
+            {
+                await _audit.LogAsync("Patient Management", "Update",
+                    $"Child – {child.FirstName} {child.LastName}",
+                    $"Updated health notes: {string.Join(", ", changes.Select(c => c.Field))}.",
+                    oldValue: string.Join("; ", changes.Select(c => $"{c.Field}: {c.Old}")),
+                    newValue: string.Join("; ", changes.Select(c => $"{c.Field}: {c.New}")));
+
+                await NotifyRecordChangedAsync(id, child, changes);
+            }
+
+            return Ok(new
+            {
+                message = changes.Count > 0 ? "Health notes updated." : "No changes.",
+                allergies = child.Allergies,
+                existingConditions = child.ExistingConditions,
+                changed = changes.Select(c => c.Field),
+            });
+        }
+
+        // Objective 3 of the study: parents get a confirmation whenever their
+        // child's information is changed.
+        private async Task NotifyRecordChangedAsync(Guid id, Child updated, List<(string Field, string Old, string New)> changes)
+        {
+            if (changes.Count == 0) return;
+
+            var tally = new ParentNotifier.Delivery();
+            var lines = string.Join("\n", changes.Select(c => $"• {c.Field}: {c.Old} → {c.New}"));
+            bool rescheduled = changes.Any(c => c.Field == "Birth date");
+
+            // Text: the new values if they fit in one SMS, else just which fields
+            // changed (the full old → new list is in the app and the email).
+            const string ask = "If this is wrong, please tell the health center.";
+            string sms = $"Leveriza Health Center: {updated.FirstName}'s record was updated. " +
+                         $"{string.Join("; ", changes.Select(c => $"{c.Field}: {c.New}"))}. {ask}";
+            if (sms.Length > 160)
+                sms = $"Leveriza Health Center: {updated.FirstName}'s record was updated " +
+                      $"({string.Join(", ", changes.Select(c => c.Field))}). {ask} Details are in your email and the Aruga app.";
+
+            foreach (var parent in await _notifier.ParentsOfChildAsync(id))
+            {
+                await _notifier.NotifyAsync(parent, new Notification
+                {
+                    ChildID = id,
+                    Type = "RecordUpdated",
+                    Title = $"{updated.FirstName}'s record was updated",
+                    Message =
+                        $"These details in {updated.FirstName} {updated.LastName}'s health record were changed:\n{lines}" +
+                        (rescheduled ? "\n\nThe vaccination schedule was adjusted to the corrected birth date. Please check the Schedule page." : "") +
+                        "\n\nIf anything looks wrong, please tell Leveriza Health Center on your next visit.",
+                    IsRead = false,
+                }, tally, smsText: sms);
+            }
+            await _context.SaveChangesAsync();
         }
 
         // Field-by-field differences, in words a parent understands
@@ -286,6 +345,7 @@ namespace AndroidWebAPI.Controllers
             Add("Barangay", before.Barangay, after.Barangay);
             Add("Family No.", before.FamilyNo, after.FamilyNo);
             Add("Allergies", before.Allergies, after.Allergies);
+            Add("Existing conditions", before.ExistingConditions, after.ExistingConditions);
             Add("Birth height (cm)", before.BirthHeight, after.BirthHeight);
             Add("Birth weight (kg)", before.BirthWeight, after.BirthWeight);
             return list;
@@ -314,6 +374,7 @@ namespace AndroidWebAPI.Controllers
                         birthDate = c.BirthDate,
                         placeOfBirth = c.PlaceOfBirth,
                         allergies = c.Allergies,
+                        existingConditions = c.ExistingConditions,
                         sex = c.Sex,
                         healthCenter = c.HealthCenter,
                         barangay = c.Barangay,
@@ -360,6 +421,7 @@ public async Task<IActionResult> GetAllChildren()
             familyNo = c.FamilyNo,
             sex = c.Sex,
             allergies = c.Allergies,
+            existingConditions = c.ExistingConditions,
             birthHeight = c.BirthHeight,
             birthWeight = c.BirthWeight,
             parentName = GetPrimaryParentName(c),
@@ -416,6 +478,7 @@ public async Task<IActionResult> GetChildById(Guid id)
             address = child.Address,
             healthCenter = child.HealthCenter,
             allergies = child.Allergies,
+            existingConditions = child.ExistingConditions,
             barangay = child.Barangay,
             familyNo = child.FamilyNo,
             sex = child.Sex,

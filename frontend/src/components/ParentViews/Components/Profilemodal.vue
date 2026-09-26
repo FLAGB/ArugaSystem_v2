@@ -133,11 +133,12 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 import { format } from 'date-fns'
 
-const API_BASE_URL = 'http://localhost:57147'
+const API_BASE_URL = API_ORIGIN
 
 // parentData and children are fetched/owned by whichever page renders this
 // component (see HARD RULE 3) and passed down as props. The page controls

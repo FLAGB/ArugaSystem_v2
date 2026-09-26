@@ -95,11 +95,11 @@
 
                   <button
                     v-if="!scanning"
-                    @click="startScanner"
-                    :disabled="childrenLoading || children.length === 0 || validating"
+                    @click="scanQr"
+                    :disabled="childrenLoading || children.length === 0 || validating || readingPhoto"
                     class="w-full px-10 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-all shadow-lg"
                   >
-                    Scan the Clinic QR Code
+                    {{ readingPhoto ? 'Reading the QR code…' : 'Scan the Clinic QR Code' }}
                   </button>
                   <button
                     v-else
@@ -108,6 +108,10 @@
                   >
                     Stop Camera
                   </button>
+                  <p v-if="!liveCamera && !readingPhoto" class="text-[11px] text-white/50 mt-2">
+                    Your camera will open. Take a photo of the QR code to check in.
+                  </p>
+                  <input ref="photoInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onQrPhoto" />
 
                   <div class="flex items-center gap-3 my-5 text-white/30 text-[10px] font-bold uppercase">
                     <span class="h-px flex-1 bg-white/10"></span> or <span class="h-px flex-1 bg-white/10"></span>
@@ -219,6 +223,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { format } from 'date-fns'
 import { Html5Qrcode } from 'html5-qrcode'
+import { BrowserQRCodeReader } from '@zxing/browser'
 
 import HeaderNav from '../Components/Headernav.vue'
 import ChildSidebar from '../Components/Childsidebar.vue'
@@ -465,6 +470,67 @@ const scanning = ref(false)
 const validCode = ref('')     // today's code, once the clinic QR checked out
 let scanner = null
 
+// Browsers only show a live camera inside a page on a secure (https) site.
+// On the clinic's local address (http://192.168.x.x) the same button opens the
+// phone's camera to take a photo of the QR instead, and the code is read from
+// the photo. (Scanning the QR with the camera app also works: its link opens
+// this page with the code filled in.)
+const liveCamera = ref(typeof window !== 'undefined' && window.isSecureContext && !!navigator.mediaDevices?.getUserMedia)
+const photoInput = ref(null)
+const readingPhoto = ref(false)
+
+function scanQr() {
+  qrError.value = ''
+  if (liveCamera.value) startScanner()
+  else photoInput.value?.click()
+}
+
+async function onQrPhoto(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''       // so the same photo can be chosen again
+  if (!file) return
+  readingPhoto.value = true
+  try {
+    const text = await readQrFromPhoto(file)
+    if (text) validateCode(text)
+    else qrError.value = 'No QR code was found in that photo. Hold the phone closer so the QR fills most of the picture, or type the code under it.'
+  } catch (err) {
+    console.error('QR photo error:', err)
+    qrError.value = 'That photo couldn’t be read. Please try again, or type the code under the QR.'
+  } finally {
+    readingPhoto.value = false
+  }
+}
+
+// Phone photos are 12+ megapixels: too big for a canvas on some iPhones and
+// slow to search, so the QR is read from smaller copies (a few sizes, in case
+// it is small in the picture).
+async function readQrFromPhoto(file) {
+  const image = await loadImage(file)
+  const reader = new BrowserQRCodeReader()
+  for (const size of [1200, 800, 2000]) {
+    const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(image.naturalWidth * scale)
+    canvas.height = Math.round(image.naturalHeight * scale)
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
+    try {
+      return reader.decodeFromCanvas(canvas).getText()
+    } catch { /* no QR found at this size */ }
+  }
+  return null
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image) }
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Not an image')) }
+    image.src = url
+  })
+}
+
 // The QR holds a link like …/ParentCheckin?code=XYZ; accept that or a bare code
 function extractCode(text) {
   const raw = String(text || '').trim()
@@ -511,7 +577,9 @@ async function startScanner() {
     console.error('Camera error:', err)
     scanning.value = false
     scanner = null
-    qrError.value = 'The camera couldn’t be opened. Allow camera access, or type the code printed under the QR instead.'
+    // Camera blocked or missing: the next tap takes a photo instead
+    liveCamera.value = false
+    qrError.value = 'The camera couldn’t be opened here. Tap the button again to take a photo of the QR instead, or type the code under it.'
   }
 }
 

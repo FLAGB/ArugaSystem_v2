@@ -139,6 +139,7 @@ CREATE TABLE dbo.Children (
     CreatedAt    datetime2        NOT NULL CONSTRAINT DF_Children_CreatedAt DEFAULT (GETDATE()),
     UpdatedAt    datetime2        NOT NULL CONSTRAINT DF_Children_UpdatedAt DEFAULT (GETDATE()),
     Allergies    nvarchar(500)    NULL,
+    ExistingConditions nvarchar(500) NULL, -- e.g. asthma; Doctors/Nurses may update it with Allergies
     BirthHeight  decimal(5,2)     NULL,   -- cm
     BirthWeight  decimal(5,2)     NULL,   -- kg
     FamilyNo     nvarchar(20)     NULL,   -- family (household) number the clinic files by

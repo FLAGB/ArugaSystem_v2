@@ -142,6 +142,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { Bell, Settings } from "lucide-vue-next";
@@ -154,7 +155,7 @@ defineProps({
 });
 
 const router = useRouter();
-const API_BASE = "http://localhost:57147/api";
+const API_BASE = `${API_ORIGIN}/api`;
 
 const account = getAccount() || {};
 const user = account.user || {};

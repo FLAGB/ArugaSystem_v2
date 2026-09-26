@@ -267,6 +267,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, reactive, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { Plus, Package, AlertTriangle, Trash2, X, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-vue-next'
@@ -274,7 +275,7 @@ import StaffSidebar from './StaffSidebar.vue'
 import StaffTopbar from './StaffTopbar.vue'
 
 // Same API_BASE convention as the rest of the project.
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '') + '/api'
+const API_BASE = `${API_ORIGIN}/api`
 
 const inventory = ref([])       // raw VaccineInventory rows from the backend
 const vaccineCatalog = ref([])  // Vaccine catalog, used to resolve vaccineID -> name

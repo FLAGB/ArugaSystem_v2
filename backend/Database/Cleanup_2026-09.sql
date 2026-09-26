@@ -25,7 +25,8 @@
        QueueQRCodes). QR check-in starts switched ON.
     6. Prepares AccountOTPs for the Forgot Password codes.
     7. Adds VaccineInventory.ManufacturingDate (from the documentation).
-       Adds Children.FamilyNo (the family number the clinic files by).
+       Adds Children.FamilyNo (the family number the clinic files by)
+       and Children.ExistingConditions (e.g. asthma).
     8. Lets Users.UserType say "Administrator" instead of "Admission"
        for admins.
     9. Adds indexes for the lookups the system does most often.
@@ -213,6 +214,10 @@ IF COL_LENGTH(N'dbo.VaccineInventory', N'ManufacturingDate') IS NULL
 -- Family (household) number: the health center identifies families by it
 IF COL_LENGTH(N'dbo.Children', N'FamilyNo') IS NULL
     ALTER TABLE dbo.Children ADD FamilyNo nvarchar(20) NULL;
+
+-- Existing conditions (e.g. asthma), kept next to Allergies
+IF COL_LENGTH(N'dbo.Children', N'ExistingConditions') IS NULL
+    ALTER TABLE dbo.Children ADD ExistingConditions nvarchar(500) NULL;
 
 /* ---------------------------------------------------------------------
    3. READABLE NAMES for keys and rules that SQL Server named itself

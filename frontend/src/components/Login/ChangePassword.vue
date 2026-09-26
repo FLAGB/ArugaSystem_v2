@@ -1,9 +1,10 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import axios from "axios"
 
-const API_BASE_URL = "http://localhost:57147/api/auth"
+const API_BASE_URL = `${API_ORIGIN}/api/auth`
 
 const router = useRouter()
 

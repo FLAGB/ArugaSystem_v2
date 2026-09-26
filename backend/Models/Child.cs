@@ -28,6 +28,10 @@ namespace AndroidWebAPI.Models
         public string? Sex { get; set; }
         public string? Allergies { get; set; }
 
+        // e.g. asthma, heart condition. Doctors/Nurses may update this and
+        // Allergies (PATCH /api/Children/{id}/health-notes).
+        public string? ExistingConditions { get; set; }
+
         // Birth measurements, taken at registration (or added later via Edit).
         // decimal(5,2) matches sensible bounds for both fields: heights up to
         // 999.99 cm and weights up to 999.99 kg comfortably cover any real

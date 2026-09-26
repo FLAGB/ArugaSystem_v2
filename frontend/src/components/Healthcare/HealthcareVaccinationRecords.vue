@@ -440,6 +440,7 @@
 <!-- The <template> and <style> sections are identical to what you already have -->
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { getUser } from '@/utils/auth'
 import HealthcareSidebar from './Components/HealthcareSidebar.vue'
 import HealthcareHeader from './Components/HealthcareHeader.vue'
@@ -453,7 +454,7 @@ import {
   AlertCircle, ListChecks
 } from 'lucide-vue-next'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const API = API_ORIGIN
 const router = useRouter()
 const route  = useRoute()
 

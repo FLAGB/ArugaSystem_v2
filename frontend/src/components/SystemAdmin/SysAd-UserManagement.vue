@@ -1,10 +1,11 @@
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import { ref, computed, reactive, onMounted } from 'vue'
 import axios from 'axios'
 import AppSidebar from './Components/AppSidebar.vue'
 import AppHeader from './Components/AppHeader.vue'
 
-const API_BASE_URL = 'http://localhost:57147/api'
+const API_BASE_URL = `${API_ORIGIN}/api`
 
 /* ----------------------------- Layout state (page-level) ------------------------------ */
 // Sidebar owns its own collapse state internally now. This page only needs

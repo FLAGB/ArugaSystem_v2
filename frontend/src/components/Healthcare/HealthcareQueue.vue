@@ -106,6 +106,7 @@
 </template>
 
 <script setup>
+import { API_ORIGIN } from '@/utils/apiBase'
 import HealthcareSidebar from './Components/HealthcareSidebar.vue'
 import HealthcareHeader from './Components/HealthcareHeader.vue'
 import { fetchMyStation, isAtMyStation } from './Components/station.js'
@@ -116,7 +117,7 @@ import axios from 'axios'
 import { Loader2, ListChecks, Syringe, DoorOpen } from 'lucide-vue-next'
 
 const router = useRouter()
-const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const API = API_ORIGIN
 
 // ─────────────────────────────────────────────────────────────
 // LIVE QUEUE — GET /api/Queue/today (every visit today, with the station
