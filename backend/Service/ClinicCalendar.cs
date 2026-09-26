@@ -48,8 +48,32 @@ namespace AndroidWebAPI.Services
             throw new Exception("No open clinic day found within the next year.");
         }
 
-        // "Mon–Fri, 8:00 AM – 5:00 PM", built from the weekly schedule the
-        // admin sets under Operating Hours, for messages sent to parents.
+        // Open/closed test for many dates at once (two queries in total instead
+        // of two per date). Same rule as NextOpenDayAsync.
+        public static async Task<Func<DateTime, bool>> OpenDayCheckAsync(AppDbContext context)
+        {
+            var exceptions = await context.ClinicScheduleExceptions.Where(e => e.IsActive).ToListAsync();
+            var weekly = await context.ClinicOperatingSchedules.Where(s => s.IsActive).ToListAsync();
+
+            return date =>
+            {
+                var exception = exceptions.FirstOrDefault(e => e.ExceptionDate.Date == date.Date);
+                if (exception != null) return exception.IsOpen;
+                return weekly.Any(s => s.DayOfWeek == (int)date.DayOfWeek && s.IsOpen);
+            };
+        }
+
+        // The health center's general hours (other services run until 5 PM),
+        // shown to parents next to the vaccination hours. Set "Clinic:Hours"
+        // in appsettings.json to change it.
+        public const string DefaultGeneralHours = "Mon–Fri · 8:00 AM – 5:00 PM";
+
+        public static string GeneralHours(IConfiguration config) =>
+            string.IsNullOrWhiteSpace(config["Clinic:Hours"]) ? DefaultGeneralHours : config["Clinic:Hours"]!;
+
+        // Vaccination days and hours, e.g. "Mon, Wed, Fri · 8:00 AM – 12:00 PM",
+        // built from the weekly schedule the admin sets under Operating Hours.
+        // Due dates, check-in and reminders all follow this schedule.
         public static async Task<string> DescribeHoursAsync(AppDbContext context)
         {
             var open = (await context.ClinicOperatingSchedules
@@ -77,7 +101,7 @@ namespace AndroidWebAPI.Services
 
             var from = open.Min(s => s.OpeningTime);
             var to = open.Max(s => s.ClosingTime);
-            return $"{string.Join(", ", parts)}, {Time(from)} – {Time(to)}";
+            return $"{string.Join(", ", parts)} · {Time(from)} – {Time(to)}";
 
             static string Time(TimeSpan t) => DateTime.Today.Add(t).ToString("h:mm tt");
         }

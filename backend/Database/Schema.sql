@@ -502,14 +502,14 @@ BEGIN
     SET IDENTITY_INSERT dbo.VaccinationScheduleRules OFF;
 END
 
--- Clinic hours: Monday–Friday 8 AM–5 PM, check-in until 4 PM; closed weekends
+-- Vaccination days: Monday, Wednesday and Friday, 8 AM–12 PM, check-in until 11 AM
 IF NOT EXISTS (SELECT 1 FROM dbo.ClinicOperatingSchedule)
     INSERT dbo.ClinicOperatingSchedule (DayOfWeek, IsOpen, OpeningTime, ClosingTime, QueueCutoffTime) VALUES
-     (1, 1, '08:00', '17:00', '16:00'),
-     (2, 1, '08:00', '17:00', '16:00'),
-     (3, 1, '08:00', '17:00', '16:00'),
-     (4, 1, '08:00', '17:00', '16:00'),
-     (5, 1, '08:00', '17:00', '16:00'),
+     (1, 1, '08:00', '12:00', '11:00'),
+     (2, 0, '08:00', '12:00', '11:00'),
+     (3, 1, '08:00', '12:00', '11:00'),
+     (4, 0, '08:00', '12:00', '11:00'),
+     (5, 1, '08:00', '12:00', '11:00'),
      (6, 0, '08:00', '12:00', '11:00'),
      (0, 0, '08:00', '12:00', '11:00');
 

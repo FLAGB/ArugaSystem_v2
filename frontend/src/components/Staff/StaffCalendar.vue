@@ -23,7 +23,7 @@
             <div class="flex flex-wrap items-center gap-4 mb-3 text-[11px] text-slate-500">
               <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Due for a vaccine</span>
               <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Vaccinated</span>
-              <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Clinic closed</span>
+              <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span> No vaccinations / closed</span>
             </div>
 
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -52,7 +52,7 @@
                       {{ cell.day }}
                     </span>
                     <span v-if="cell.closed" class="text-[9px] font-bold uppercase text-slate-400 truncate max-w-[70%]" :title="cell.closedReason">
-                      {{ cell.closedReason || 'Closed' }}
+                      {{ cell.closedReason || 'No vaccines' }}
                     </span>
                   </div>
 
@@ -73,7 +73,7 @@
           <!-- DAY DETAILS -->
           <aside class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 h-fit xl:sticky xl:top-0">
             <p class="text-sm font-bold text-slate-800">{{ selectedLabel }}</p>
-            <p v-if="selectedCell?.closed" class="mt-1 text-xs text-slate-500">Clinic closed{{ selectedCell.closedReason ? ` · ${selectedCell.closedReason}` : '' }}</p>
+            <p v-if="selectedCell?.closed" class="mt-1 text-xs text-slate-500">{{ selectedCell.closedReason ? `Health center closed · ${selectedCell.closedReason}` : 'No vaccinations on this day' }}</p>
 
             <div class="mt-4">
               <p class="text-[11px] font-bold uppercase tracking-wide text-amber-700 mb-2">Due ({{ selectedCell?.due.length || 0 }})</p>

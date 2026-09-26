@@ -88,15 +88,12 @@
                     <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-emerald-600"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Scheduled</span></div>
                     <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-emerald-500"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Given</span></div>
                     <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-red-400"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Missed Due Date</span></div>
-                    <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-emerald-500/40 border border-emerald-500/40"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Window (MWF)</span></div>
-                    <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-slate-100"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Clinic Day</span></div>
+                    <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-emerald-500/40 border border-emerald-500/40"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Catch-up Window</span></div>
+                    <div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-slate-100"></div><span class="text-[9px] text-slate-400 font-bold uppercase">Vaccination Day</span></div>
                   </div>
                 </div>
                 <div class="space-y-2">
-                  <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2">
-                    <span class="text-xs mt-0.5">💡</span>
-                    <p class="text-[10px] text-amber-700"><span class="font-bold">Clinic hours:</span> Mon, Wed, Fri · 8:00 AM – 12:00 PM</p>
-                  </div>
+                  <ClinicHoursNote :clinic="clinic" />
                   <div class="bg-red-50 border-l-4 border-red-500 px-4 py-3 rounded-r-lg flex items-center gap-2">
                     <span class="text-[9px] font-bold text-red-700 uppercase">⚠ Stocks may change without notice</span>
                   </div>
@@ -121,11 +118,12 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { addDays, format, isMonday, isWednesday, isFriday, getDaysInMonth, startOfMonth } from 'date-fns'
+import { addDays, format, getDaysInMonth, startOfMonth } from 'date-fns'
 import HeaderNav from '../Components/Headernav.vue'
 import ChildSidebar from '../Components/Childsidebar.vue'
 import ProfileModal from '../Components/Profilemodal.vue'
 import NotificationPanel from '../Components/Notificationpanel.vue'
+import ClinicHoursNote from '../Components/ClinicHoursNote.vue'
 import { getAccount, logout as authLogout } from '@/utils/auth'
 import api from '../Composables/api.js'
 import { fetchChildSchedule, buildSchedule } from '../Composables/childSchedule.js'
@@ -171,6 +169,27 @@ const calendarDaysInMonth = computed(() => getDaysInMonth(new Date(calYear.value
 const calendarOffset      = computed(() => startOfMonth(new Date(calYear.value, calMonth.value, 1)).getDay())
 const windowEndDate       = computed(() => selectedVax.value ? addDays(selectedVax.value.scheduledDate, 14) : null)
 
+// Clinic (vaccination) days come from the admin's Operating Hours: the open
+// weekdays, with holidays / special openings taking priority.
+const clinic = ref(null)   // GET /ClinicOperatingSchedule/today
+
+function isClinicDay(date) {
+  const c = clinic.value
+  if (!c) return false
+  const key = format(date, 'yyyy-MM-dd')
+  const exception = (c.exceptions || []).find(e => e.date === key)
+  if (exception) return exception.isOpen
+  return (c.openDays || []).includes(date.getDay())
+}
+
+async function fetchClinicHours() {
+  try {
+    clinic.value = (await api.get('/ClinicOperatingSchedule/today')).data
+  } catch (err) {
+    console.error('Failed to load clinic hours:', err)
+  }
+}
+
 function prevMonth() { calMonth.value === 0 ? (calMonth.value = 11, calYear.value--) : calMonth.value-- }
 function nextMonth() { calMonth.value === 11 ? (calMonth.value = 0, calYear.value++) : calMonth.value++ }
 
@@ -179,7 +198,7 @@ function getDayClass(day) {
   const date      = new Date(calYear.value, calMonth.value, day)
   const scheduled = selectedVax.value.scheduledDate
   const winEnd    = windowEndDate.value
-  const clinic    = isMonday(date) || isWednesday(date) || isFriday(date)
+  const clinicDay = isClinicDay(date)
   const sameDay   = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
   if (selectedVax.value.wasLate && selectedVax.value.originalDueDate && sameDay(date, selectedVax.value.originalDueDate))
@@ -188,9 +207,9 @@ function getDayClass(day) {
     return 'bg-emerald-500 text-white shadow-lg scale-110 font-bold z-10 cursor-default'
   if (!selectedVax.value.isCompleted && sameDay(date, scheduled))
     return 'bg-emerald-600 text-white shadow-lg scale-110 font-bold z-10 cursor-default'
-  if (!selectedVax.value.isCompleted && clinic && winEnd && date > scheduled && date <= winEnd)
+  if (!selectedVax.value.isCompleted && clinicDay && winEnd && date > scheduled && date <= winEnd)
     return 'bg-emerald-500/30 text-slate-700 border-b-2 border-emerald-500 cursor-pointer'
-  if (clinic) return 'bg-slate-100 text-slate-400 cursor-pointer'
+  if (clinicDay) return 'bg-slate-100 text-slate-400 cursor-pointer'
   return 'text-slate-300 pointer-events-none'
 }
 
@@ -245,6 +264,7 @@ async function fetchUnreadCount() {
 onMounted(async () => {
   const savedAccount = getAccount()
   if (!savedAccount) { router.push('/'); return }
+  fetchClinicHours()
 
   const rawUser = savedAccount.user ?? savedAccount
 
@@ -285,6 +305,8 @@ onMounted(async () => {
         relationshipType,
         isPrimaryContact: child.IsPrimaryContact ?? child.isPrimaryContact,
         canReceiveNotifications: child.CanReceiveNotifications ?? child.canReceiveNotifications,
+        // Everyone linked to the child: "Maria Santos (Mother); Rosario Santos (Grandmother)"
+        guardians: child.Guardians ?? child.guardians,
 
         // The dashboard endpoint doesn't return MotherName/FatherName/GuardianName
         // fields directly — it only returns relationshipType + parentFullName for

@@ -48,7 +48,12 @@
                   <p class="text-sm text-slate-500">
                     {{ child.sex || '—' }} · {{ child.ageLabel }} · Born {{ formatDate(child.birthDate) }}
                   </p>
-                  <p class="text-xs text-slate-400 mt-0.5">Parent / Guardian: {{ child.parentName || '—' }}</p>
+                  <p v-if="visit?.requestBy" class="text-xs text-slate-500 mt-0.5">
+                    Checked in by: <span class="font-medium text-slate-700">{{ withRelationship(visit.requestBy, visit.requestByRelationship) }}</span>
+                  </p>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    Parents / Guardians: {{ child.guardians?.length ? child.guardians.map(g => withRelationship(g.name, g.relationship)).join(', ') : (child.parentName || '—') }}
+                  </p>
                 </div>
                 <div class="text-right">
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Queue</p>
@@ -253,6 +258,7 @@ import { getUser } from '@/utils/auth'
 import HealthcareSidebar from './Components/HealthcareSidebar.vue'
 import HealthcareHeader from './Components/HealthcareHeader.vue'
 import { isAtMyStation } from './Components/station.js'
+import { withRelationship, guardiansOf } from '@/utils/format'
 
 const router = useRouter()
 const route  = useRoute()
@@ -306,6 +312,7 @@ onMounted(async () => {
       birthDate: c.birthDate,
       ageLabel: ageLabel(c.birthDate),
       parentName: c.parentName,
+      guardians: guardiansOf(c.parents),
       allergies: c.allergies && !/^(none|n\/a|none known)$/i.test(c.allergies.trim()) ? c.allergies : null,
     }
     queueNumber.value = queueRes?.data?.queueNumber ?? ''

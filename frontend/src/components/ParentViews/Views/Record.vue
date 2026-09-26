@@ -252,6 +252,8 @@ onMounted(async () => {
         relationshipType,
         isPrimaryContact: child.IsPrimaryContact ?? child.isPrimaryContact,
         canReceiveNotifications: child.CanReceiveNotifications ?? child.canReceiveNotifications,
+        // Everyone linked to the child: "Maria Santos (Mother); Rosario Santos (Grandmother)"
+        guardians: child.Guardians ?? child.guardians,
 
         // The dashboard endpoint doesn't return MotherName/FatherName/GuardianName
         // fields directly — it only returns relationshipType + parentFullName for

@@ -146,6 +146,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { Bell, Settings } from "lucide-vue-next";
 import { getAccount } from "@/utils/auth";
+import { withRelationship } from "@/utils/format";
 
 defineProps({
   title: { type: String, required: true },
@@ -203,7 +204,7 @@ const loadLateQueue = async () => {
         queueID: q.queueID,
         no: `Q-${String(q.queueNumber).padStart(3, "0")}`,
         child: q.children?.map((c) => c.name).join(", ") || "—",
-        parent: q.requestBy || "—",
+        parent: withRelationship(q.requestBy, q.requestByRelationship),
         minutes: q.checkedInAt ? Math.max(0, Math.floor((Date.now() - new Date(q.checkedInAt)) / 60000)) : 0,
       }))
       .sort((a, b) => b.minutes - a.minutes);

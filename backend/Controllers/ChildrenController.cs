@@ -119,6 +119,17 @@ namespace AndroidWebAPI.Controllers
             return Ok(result);
         }
 
+        // Birth weight is in kg and birth length in cm; catches the two being
+        // swapped or a missing decimal point (e.g. 33 kg instead of 3.3 kg).
+        private static string? CheckBirthMeasurements(decimal? weightKg, decimal? heightCm)
+        {
+            if (weightKg is decimal w && (w < 0.5m || w > 7m))
+                return $"Birth weight {w:0.##} kg looks wrong. Enter it in kilograms, between 0.5 and 7 (for example 3.2).";
+            if (heightCm is decimal h && (h < 25m || h > 65m))
+                return $"Birth height {h:0.#} cm looks wrong. Enter it in centimeters, between 25 and 65 (for example 50).";
+            return null;
+        }
+
         // ── CREATE: POST /api/Children ────────────────────────────
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPost]
@@ -133,6 +144,8 @@ namespace AndroidWebAPI.Controllers
                 return BadRequest(new { message = "BirthDate is required." });
             if (dto.Parents == null || !dto.Parents.Any())
                 return BadRequest(new { message = "At least one parent link is required." });
+            if (CheckBirthMeasurements(dto.BirthWeight, dto.BirthHeight) is string measurementError)
+                return BadRequest(new { message = measurementError });
 
             try
             {
@@ -186,6 +199,8 @@ namespace AndroidWebAPI.Controllers
                 return BadRequest(new { message = "FirstName is required." });
             if (string.IsNullOrWhiteSpace(dto.LastName))
                 return BadRequest(new { message = "LastName is required." });
+            if (CheckBirthMeasurements(dto.BirthWeight, dto.BirthHeight) is string measurementError)
+                return BadRequest(new { message = measurementError });
 
             try
             {
@@ -349,7 +364,7 @@ public async Task<IActionResult> GetAllChildren()
             birthWeight = c.BirthWeight,
             parentName = GetPrimaryParentName(c),
 
-            parents = c.ParentRelationships.Select(r => new
+            parents = c.ParentRelationships.Where(r => r.Status == "Active").Select(r => new
             {
                 parentID = r.ParentID,
                 parentName = r.Parent != null ? $"{r.Parent.FirstName} {r.Parent.LastName}".Trim() : null,
@@ -408,7 +423,7 @@ public async Task<IActionResult> GetChildById(Guid id)
             birthWeight = child.BirthWeight,
             parentName = GetPrimaryParentName(child),
 
-            parents = child.ParentRelationships.Select(r => new
+            parents = child.ParentRelationships.Where(r => r.Status == "Active").Select(r => new
             {
                 parentID = r.ParentID,
                 parentName = r.Parent != null ? $"{r.Parent.FirstName} {r.Parent.LastName}".Trim() : null,

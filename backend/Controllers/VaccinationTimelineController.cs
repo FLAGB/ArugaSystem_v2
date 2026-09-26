@@ -43,6 +43,7 @@ using AndroidWebAPI.Data;
 public async Task<IActionResult> GetByChild(Guid childId, [FromServices] AppDbContext context)
 {
     if (!await AndroidWebAPI.Services.AccessGuard.CanSeeChildAsync(User, context, childId)) return Forbid();
+    await _repository.EnsureTimelineAsync(childId);
     var timelines = await _repository.GetByChildAsync(childId);
 
     var result = timelines.Select(t => new

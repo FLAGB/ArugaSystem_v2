@@ -51,7 +51,7 @@ namespace AndroidWebAPI.Services
                         Out: g.Where(n => n.Type == OutType).Select(n => (DateTime?)n.CreatedAt).Max(),
                         Back: g.Where(n => n.Type == BackType).Select(n => (DateTime?)n.CreatedAt).Max()));
 
-            string clinicInfo = $"Leveriza Health Center ({await ClinicCalendar.DescribeHoursAsync(context)})";
+            string clinicInfo = $"Leveriza Health Center (vaccinations: {await ClinicCalendar.DescribeHoursAsync(context)})";
 
             foreach (var vaccine in vaccines)
             {
@@ -109,7 +109,7 @@ namespace AndroidWebAPI.Services
                                 ScheduledDate = entry.ScheduledDate,
                             }, tally, smsText:
                                 $"Leveriza Health Center: {vaccine.Abbreviation ?? vaccine.VaccineName} is back in stock. " +
-                                $"Please bring {child.FirstName} in for Dose {entry.DoseNumber} on the next clinic day.");
+                                $"Please bring {child.FirstName} in for Dose {entry.DoseNumber} on the next vaccination day.");
                         }
                     }
                 }

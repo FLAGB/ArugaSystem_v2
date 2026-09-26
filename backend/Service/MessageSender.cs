@@ -87,14 +87,21 @@ namespace AndroidWebAPI.Services
 
         // Returns true when the message was handed to the mail server (or, on a
         // development laptop without email set up, written to the console).
+        // Made-up addresses used for testing. A person with one of these is a
+        // test record, so their phone number is made up too and must not be
+        // texted: it could belong to a real stranger.
+        public static bool IsTestAddress(string? email) =>
+            !string.IsNullOrWhiteSpace(email) &&
+            (email.Contains("@demo.", StringComparison.OrdinalIgnoreCase) ||
+             email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase));
+
         public async Task<bool> SendEmailAsync(string? to, string subject, string body)
         {
             if (string.IsNullOrWhiteSpace(to) || !to.Contains('@')) return false;
 
             // Test/demo addresses (…@demo.aruga.ph, …@demo.com) don't exist;
             // sending to them would only fill the clinic inbox with bounces.
-            bool testAddress = to.Contains("@demo.", StringComparison.OrdinalIgnoreCase) ||
-                               to.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase);
+            bool testAddress = IsTestAddress(to);
 
             if (!EmailEnabled || testAddress)
             {
@@ -154,6 +161,11 @@ namespace AndroidWebAPI.Services
                 return false;
             }
 
+            // Plain characters keep a text at 160 characters per SMS; one "·" or
+            // "–" would switch the whole message to Unicode (70 per SMS).
+            text = text.Replace(" · ", ", ").Replace('·', '-').Replace('–', '-').Replace('—', '-')
+                       .Replace('‘', '\'').Replace('’', '\'').Replace('“', '"').Replace('”', '"')
+                       .Replace("…", "...");
             var message = text.Length > 450 ? text[..447] + "..." : text;
 
             try

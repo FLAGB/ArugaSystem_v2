@@ -29,11 +29,13 @@ namespace AndroidWebAPI.Controllers
         }
 
         // GET: api/ClinicOperatingSchedule/today
-        // What the Check-in page and dashboards show: the usual hours in words
-        // ("Mon–Fri, 8:00 AM – 5:00 PM") and whether the clinic is open today
-        // (a holiday / special opening under Operating Hours wins).
+        // What the parent pages show: the clinic's general hours, the
+        // vaccination hours in words ("Mon, Wed, Fri · 8:00 AM – 12:00 PM"),
+        // whether vaccinations run today (a holiday / special opening under
+        // Operating Hours wins), and the vaccination weekdays + exceptions for
+        // the Schedule page calendar.
         [HttpGet("today")]
-        public async Task<IActionResult> GetToday()
+        public async Task<IActionResult> GetToday([FromServices] IConfiguration config)
         {
             var today = DateTime.Today;
             var hoursText = await AndroidWebAPI.Services.ClinicCalendar.DescribeHoursAsync(_context);
@@ -50,11 +52,22 @@ namespace AndroidWebAPI.Controllers
 
             var nextOpen = await AndroidWebAPI.Services.ClinicCalendar.NextOpenDayAsync(_context, today.AddDays(1));
 
+            var openDays = await _context.ClinicOperatingSchedules
+                .Where(s => s.IsActive && s.IsOpen)
+                .Select(s => s.DayOfWeek)
+                .ToListAsync();
+            var exceptions = await _context.ClinicScheduleExceptions
+                .Where(e => e.IsActive)
+                .Select(e => new { e.ExceptionDate, e.IsOpen })
+                .ToListAsync();
+
             static string? Time(TimeSpan? t) => t == null ? null : DateTime.Today.Add(t.Value).ToString("h:mm tt");
 
             return Ok(new
             {
-                hoursText,
+                hoursText,                                   // vaccination days + hours
+                clinicHoursText = AndroidWebAPI.Services.ClinicCalendar.GeneralHours(config),
+                closedToday = exception != null && !exception.IsOpen,   // holiday / typhoon, not just a non-vaccination day
                 openToday = open,
                 opensAt = Time(opens),
                 closesAt = Time(closes),
@@ -62,6 +75,8 @@ namespace AndroidWebAPI.Controllers
                 checkInOpenNow = open && DateTime.Now.TimeOfDay >= opens && DateTime.Now.TimeOfDay <= cutoff,
                 reason = exception?.Reason,
                 nextOpenDay = nextOpen.ToString("dddd, MMMM d"),
+                openDays,
+                exceptions = exceptions.Select(e => new { date = e.ExceptionDate.ToString("yyyy-MM-dd"), isOpen = e.IsOpen }),
             });
         }
 
@@ -71,7 +86,8 @@ namespace AndroidWebAPI.Controllers
 [HttpPut("{scheduleID}")]
 public async Task<IActionResult> UpdateSchedule(
     int scheduleID,
-    UpdateClinicOperatingScheduleDto dto)
+    UpdateClinicOperatingScheduleDto dto,
+    [FromServices] IVaccinationTimelineRepository timelines)
 {
     var schedule = await _context.ClinicOperatingSchedules
         .FirstOrDefaultAsync(s => s.ScheduleID == scheduleID);
@@ -91,6 +107,9 @@ public async Task<IActionResult> UpdateSchedule(
     schedule.UpdatedAt = DateTime.UtcNow;
 
     await _context.SaveChangesAsync();
+
+    // A day that is now closed can't keep upcoming doses on it.
+    await timelines.MoveDosesOffClosedDaysAsync();
 
     return Ok(schedule);
 }

@@ -82,9 +82,12 @@ public class NotificationGeneratorService : BackgroundService
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifier = scope.ServiceProvider.GetRequiredService<ParentNotifier>();
 
+        // Doses whose day has passed without being given become "Missed".
+        await scope.ServiceProvider.GetRequiredService<IVaccinationTimelineRepository>().UpdateMissedVaccinationsAsync();
+
         var today = DateTime.Today;
         string clinicHoursShort = await ClinicCalendar.DescribeHoursAsync(context);
-        string clinicInfo = $"Leveriza Health Center ({clinicHoursShort})";
+        string clinicInfo = $"Leveriza Health Center (vaccinations: {clinicHoursShort})";
 
         // Doses still to be given, from the live timeline
         var due = await context.VaccinationTimelines
@@ -173,7 +176,7 @@ public class NotificationGeneratorService : BackgroundService
             string? smsText = type switch
             {
                 "ReminderDay" => $"Leveriza Health Center: {child.FirstName}'s {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} is due TOMORROW, {entry.ScheduledDate:MMM d}. See you at the clinic ({clinicHoursShort}).",
-                "OverdueMiss" => $"Leveriza Health Center: {child.FirstName} missed {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} on {entry.ScheduledDate:MMM d}. Please visit on the next clinic day ({clinicHoursShort}).",
+                "OverdueMiss" => $"Leveriza Health Center: {child.FirstName} missed {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} on {entry.ScheduledDate:MMM d}. Please visit on the next vaccination day ({clinicHoursShort}).",
                 _ => null,
             };
 

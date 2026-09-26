@@ -642,7 +642,9 @@ const reminderSchedule = {
                 <li>"Vaccine administered" to the parent when a dose is recorded, with the next due date</li>
                 <li>"Record updated" to the parent when a child's details are changed</li>
                 <li>"Temporarily unavailable" to parents of children due for a vaccine that ran out, and "available again" once it's restocked</li>
-                <li>Low-stock alerts to healthcare workers when a batch drops below its minimum</li>
+                <li>"Health center closed" to every parent when a closed day is added under Operating Hours (by email and SMS too for families with a child due that day, with the new date)</li>
+                <li>Low-stock alerts to healthcare workers and the Admission Staff when a batch drops below its minimum</li>
+                <li>Weekly stock check every Wednesday to the Admission Staff and the Administrator</li>
               </ul>
             </div>
           </div>

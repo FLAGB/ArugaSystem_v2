@@ -46,7 +46,7 @@
           <div><p class="text-[10px] uppercase tracking-wide text-slate-500">Date of Birth</p><p class="text-slate-900">{{ formatDate(child.birthDate) }}</p></div>
           <div><p class="text-[10px] uppercase tracking-wide text-slate-500">Sex</p><p class="text-slate-900">{{ child.sex || '—' }}</p></div>
           <div><p class="text-[10px] uppercase tracking-wide text-slate-500">Place of Birth</p><p class="text-slate-900">{{ child.placeOfBirth || '—' }}</p></div>
-          <div class="col-span-2"><p class="text-[10px] uppercase tracking-wide text-slate-500">Parent / Guardian</p><p class="text-slate-900">{{ child.parentName || '—' }}</p></div>
+          <div class="col-span-2"><p class="text-[10px] uppercase tracking-wide text-slate-500">Parent / Guardian</p><p class="text-slate-900">{{ guardianText }}</p></div>
           <div><p class="text-[10px] uppercase tracking-wide text-slate-500">Birth Weight / Length</p><p class="text-slate-900">{{ child.birthWeight ? child.birthWeight + ' kg' : '—' }} / {{ child.birthHeight ? child.birthHeight + ' cm' : '—' }}</p></div>
           <div class="col-span-3"><p class="text-[10px] uppercase tracking-wide text-slate-500">Address</p><p class="text-slate-900">{{ child.address || '—' }}</p></div>
           <div v-if="child.allergies" class="col-span-3"><p class="text-[10px] uppercase tracking-wide text-slate-500">Allergies</p><p class="text-rose-700 font-medium">{{ child.allergies }}</p></div>
@@ -115,13 +115,19 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import logoIcon from '@/assets/logo-icon.svg'
-import { API_BASE, formatDate, toISODate } from '@/utils/format'
+import { API_BASE, formatDate, toISODate, withRelationship, guardiansOf } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
 const childId = route.params.childId
 
 const child = ref({})
+
+// "Maria Santos (Mother), Rosario Santos (Grandmother)"
+const guardianText = computed(() => {
+  const list = guardiansOf(child.value.parents)
+  return list.length ? list.map(g => withRelationship(g.name, g.relationship)).join(', ') : (child.value.parentName || '—')
+})
 const timeline = ref([])
 const records = ref([])
 const loading = ref(true)

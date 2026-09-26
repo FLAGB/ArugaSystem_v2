@@ -329,6 +329,21 @@ UPDATE r SET AssignedDoctorID = NULL
 FROM dbo.ClinicRooms r JOIN w ON w.RoomID = r.RoomID
 WHERE w.rn > 1 AND r.IsOccupied = 0;
 
+-- Vaccination days are Monday, Wednesday and Friday, 8 AM–12 PM (check-in
+-- until 11 AM). Only replaces the old Mon–Fri 8 AM–5 PM default, so hours the
+-- admin already set under Operating Hours are kept.
+IF (SELECT COUNT(*) FROM dbo.ClinicOperatingSchedule
+    WHERE IsActive = 1 AND IsOpen = 1 AND DayOfWeek BETWEEN 1 AND 5
+      AND OpeningTime = '08:00' AND ClosingTime = '17:00') = 5
+BEGIN
+    UPDATE dbo.ClinicOperatingSchedule
+    SET IsOpen = CASE WHEN DayOfWeek IN (1, 3, 5) THEN 1 ELSE 0 END,
+        OpeningTime = '08:00', ClosingTime = '12:00', QueueCutoffTime = '11:00',
+        UpdatedAt = SYSUTCDATETIME()
+    WHERE DayOfWeek BETWEEN 1 AND 5;
+    PRINT 'Vaccination days set to Mon, Wed, Fri 8:00 AM - 12:00 PM.';
+END
+
 COMMIT TRANSACTION;
 
 PRINT 'Aruga database cleanup finished.';

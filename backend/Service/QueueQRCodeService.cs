@@ -40,8 +40,8 @@ namespace AndroidWebAPI.Services
             // 2. Clinic hours for today (a schedule exception wins)
             var hours = await GetHoursAsync(today);
             if (hours == null)
-                return (null, $"The clinic is closed today ({today:dddd, MMMM d}), so there is no check-in QR. " +
-                              "If the clinic is open today, add it under Operating Hours first.");
+                return (null, $"There are no vaccinations today ({today:dddd, MMMM d}), so there is no check-in QR. " +
+                              "If vaccinations are given today, add today under Operating Hours first.");
 
             var (open, cutoff) = hours.Value;
             if (now.TimeOfDay > cutoff)
@@ -88,7 +88,7 @@ namespace AndroidWebAPI.Services
             if (now < today.ValidFrom)
                 return (false, $"Check-in opens at {today.ValidFrom:h:mm tt}.");
             if (now > today.ValidUntil)
-                return (false, $"Check-in for today closed at {today.ValidUntil:h:mm tt}. Please come back on the next clinic day.");
+                return (false, $"Check-in for today closed at {today.ValidUntil:h:mm tt}. Please come back on the next vaccination day.");
 
             return (true, null);
         }

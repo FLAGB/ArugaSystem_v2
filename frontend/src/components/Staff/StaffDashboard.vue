@@ -10,6 +10,7 @@ import {
 import StaffSidebar from "./StaffSidebar.vue";
 import StaffTopbar from "./StaffTopbar.vue";
 import { getToken } from "@/utils/auth";
+import { withRelationship } from "@/utils/format";
 
 const router = useRouter();
 
@@ -668,8 +669,9 @@ queue.value = data.map((q) => ({
   child:
     q.children?.map(c => c.name).join(", ") || "—",
 
+  // "Rosario Santos (Grandmother)": who brought the child
   parent:
-    q.requestBy || "—",
+    withRelationship(q.requestBy, q.requestByRelationship),
 
   // Check-in time, and the station/health worker once staff assigns one
   time: q.checkedInAt

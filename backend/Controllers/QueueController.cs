@@ -147,6 +147,25 @@ namespace AndroidWebAPI.Controllers
                 .Where(u => workerIds.Contains(u.UserID))
                 .ToDictionaryAsync(u => u.UserID);
 
+            // Relationship of the person who checked in to each child
+            var parentIds = list.Select(q => q.ParentID).Distinct().ToList();
+            var links = await _context.ChildParentRelationships
+                .Where(r => parentIds.Contains(r.ParentID) && r.Status == "Active")
+                .Select(r => new { r.ParentID, r.ChildID, r.RelationshipType })
+                .ToListAsync();
+
+            string? RelationshipOf(Queue q)
+            {
+                var childIds = q.QueueChildren.Select(qc => qc.ChildID).ToHashSet();
+                var types = links
+                    .Where(l => l.ParentID == q.ParentID && childIds.Contains(l.ChildID))
+                    .Select(l => l.RelationshipType)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct()
+                    .ToList();
+                return types.Count == 0 ? null : string.Join(" / ", types);
+            }
+
             return list.Select(q =>
             {
                 ClinicRoom? room = null;
@@ -160,6 +179,7 @@ namespace AndroidWebAPI.Controllers
                     QueueNumber = q.QueueNumber,
                     BarangayNo = q.Parent?.BarangayNo,
                     RequestBy = $"{q.Parent?.FirstName} {q.Parent?.LastName}".Trim(),
+                    RequestByRelationship = RelationshipOf(q),
                     Status = q.Status,
                     QueueDate = q.QueueDate,
                     CheckedInAt = q.CreatedAt,

@@ -133,8 +133,10 @@ namespace AndroidWebAPI.Controllers
             });
             await _context.SaveChangesAsync();
 
-            // Demo accounts (DemoSeed.sql, IDs starting A2A) have made-up numbers
-            bool demoAccount = account.ReferenceID.ToString().StartsWith("a2a", StringComparison.OrdinalIgnoreCase);
+            // Demo accounts (DemoSeed.sql, IDs starting A2A) and test records
+            // (…@example.com, …@demo.…) have made-up numbers
+            bool demoAccount = account.ReferenceID.ToString().StartsWith("a2a", StringComparison.OrdinalIgnoreCase) ||
+                               MessageSender.IsTestAddress(email);
 
             bool sent = bySms
                 ? await _sender.SendSmsAsync(destination,

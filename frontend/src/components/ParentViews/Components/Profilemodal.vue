@@ -111,9 +111,9 @@
                   <span class="text-slate-400 text-xs font-bold">{{ expandedChildren.has(child.childID) ? '▲' : '▼' }}</span>
                 </button>
                 <div v-if="expandedChildren.has(child.childID)" class="px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white border-t border-slate-50">
-                  <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Mother's Name</p><p class="text-sm font-bold text-slate-700">{{ child.motherName || '—' }}</p></div>
-                  <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Father's Name</p><p class="text-sm font-bold text-slate-700">{{ child.fatherName || '—' }}</p></div>
-                  <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Legal Guardian</p><p class="text-sm font-bold text-slate-700">{{ child.guardianName || '—' }}</p></div>
+                  <!-- How the logged-in person is related to this child (Mother, Grandmother, Uncle...) -->
+                  <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">You Are {{ child.firstName }}'s</p><p class="text-sm font-bold text-slate-700">{{ child.relationshipType || '—' }}</p></div>
+                  <div class="bg-slate-50 rounded-xl px-4 py-3 sm:col-span-2"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Parents / Guardians</p><p class="text-sm font-bold text-slate-700">{{ child.guardians ? child.guardians.split('; ').join(', ') : '—' }}</p></div>
                   <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Place of Birth</p><p class="text-sm font-bold text-slate-700">{{ child.placeOfBirth || '—' }}</p></div>
                   <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Health Center</p><p class="text-sm font-bold text-slate-700">{{ child.healthCenter || '—' }}</p></div>
                   <div class="bg-slate-50 rounded-xl px-4 py-3"><p class="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Barangay</p><p class="text-sm font-bold text-slate-700">{{ child.barangay || '—' }}</p></div>

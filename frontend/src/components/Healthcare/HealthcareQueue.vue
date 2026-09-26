@@ -68,7 +68,7 @@
                   </span>
                 </div>
                 <p class="text-xs text-slate-400 mt-1">
-                  Parent / Guardian: {{ q.requestBy || '—' }}<span v-if="q.checkedInAt"> · Checked in {{ formatTime(q.checkedInAt) }}</span>
+                  Parent / Guardian: {{ withRelationship(q.requestBy, q.requestByRelationship) }}<span v-if="q.checkedInAt"> · Checked in {{ formatTime(q.checkedInAt) }}</span>
                 </p>
               </div>
               <span v-if="q.stationName" class="text-xs font-medium px-2.5 py-1 rounded-lg"
@@ -109,6 +109,7 @@
 import HealthcareSidebar from './Components/HealthcareSidebar.vue'
 import HealthcareHeader from './Components/HealthcareHeader.vue'
 import { fetchMyStation, isAtMyStation } from './Components/station.js'
+import { withRelationship } from '@/utils/format'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'

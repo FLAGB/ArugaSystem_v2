@@ -22,6 +22,8 @@
      Admission Staff ...... demo.staff
      Parents .............. e.g. maria.santos@demo.aruga.ph
                             (any parent email listed below)
+     Grandmother .......... lourdes.luna@demo.aruga.ph (Isabela Cruz's
+                            second guardian, to show a relative checking in)
 
    Run in SSMS against ArugaSystemDB (or: sqlcmd -S <server> -d ArugaSystemDB -i DemoSeed.sql)
    ===================================================================== */
@@ -161,7 +163,9 @@ INSERT @Par VALUES
  (10,'A2A20000-0000-0000-0000-000000000010',N'Paolo',   N'Sy',       N'Lim',      'paolo.lim@demo.aruga.ph',       '09181110010','722',N'12 Vito Cruz St., Malate, Manila'),
  (11,'A2A20000-0000-0000-0000-000000000011',N'Teresa',  N'Gomez',    N'Soriano',  'teresa.soriano@demo.aruga.ph',  '09181110011','720',N'140 Dagonoy St., Malate, Manila'),
  (12,'A2A20000-0000-0000-0000-000000000012',N'Ramil',   N'Castro',   N'Flores',   'ramil.flores@demo.aruga.ph',    '09181110012','721',N'77 Leveriza St., Malate, Manila'),
- (13,'A2A20000-0000-0000-0000-000000000013',N'Kristel', N'Aquino',   N'Castillo', 'kristel.castillo@demo.aruga.ph','09181110013','719',N'9 Harrison St., Malate, Manila');
+ (13,'A2A20000-0000-0000-0000-000000000013',N'Kristel', N'Aquino',   N'Castillo', 'kristel.castillo@demo.aruga.ph','09181110013','719',N'9 Harrison St., Malate, Manila'),
+ -- Isabela Cruz's grandmother (see the extra guardian link in section 4)
+ (14,'A2A20000-0000-0000-0000-000000000014',N'Lourdes', N'Santos',   N'Luna',     'lourdes.luna@demo.aruga.ph',    '09181110014','719',N'7 Pedro Gil St., Malate, Manila');
 
 MERGE Parents AS t
 USING @Par AS s ON t.ParentID = s.ParentID
@@ -239,6 +243,13 @@ INSERT ChildParentRelationship (RelationshipID, ChildID, ParentID, RelationshipT
 SELECT CAST('A2A50000-0000-0000-0000-' + RIGHT('000000000000' + CAST(k.N AS varchar(12)), 12) AS uniqueidentifier),
        k.ChildID, p.ParentID, k.Relationship, 1, 1, 'Active', @Now
 FROM @Kid k JOIN @Par p ON p.N = k.ParentN;
+
+-- A second guardian who isn't a parent: Isabela's grandmother often brings
+-- her in, so the staff linked her as "Grandmother". She has her own login and
+-- can check Isabela in; staff and health workers then see "(Grandmother)".
+INSERT ChildParentRelationship (RelationshipID, ChildID, ParentID, RelationshipType, IsPrimaryContact, CanReceiveNotifications, Status, CreatedAt)
+VALUES ('A2A50000-0000-0000-0001-000000000006', 'A2A30000-0000-0000-0000-000000000006',
+        'A2A20000-0000-0000-0000-000000000014', 'Grandmother', 0, 1, 'Active', @Now);
 
 /* =====================================================================
    5. VACCINE INVENTORY  (upserted by lot number, never deleted)
@@ -513,3 +524,11 @@ SELECT
     (SELECT COUNT(*) FROM Queues WHERE CONVERT(char(36), ParentID) LIKE 'A2A20000-%' AND QueueDate = @Today) AS QueueToday;
 
 PRINT 'Aruga demo data loaded. Log in with any demo account — password: Aruga@2026';
+
+-- Parents can only check in on a vaccination day, during check-in hours.
+IF 1 <> COALESCE(
+    (SELECT TOP 1 CAST(IsOpen AS int) FROM ClinicScheduleExceptions WHERE IsActive = 1 AND ExceptionDate = @Today),
+    (SELECT TOP 1 CAST(IsOpen AS int) FROM ClinicOperatingSchedule
+      WHERE IsActive = 1 AND DayOfWeek = DATEDIFF(day, '19000107', @Today) % 7), 0)
+    PRINT 'NOTE: today is not a vaccination day, so check-in is closed and nothing is due today. '
+        + 'For a demo, add today under System Admin > Operating Hours > Add Exception (open), then run this script again.';

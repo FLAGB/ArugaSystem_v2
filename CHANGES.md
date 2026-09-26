@@ -1,9 +1,42 @@
 # Aruga: what changed (September 2026)
 
 A plain-language list of everything that was changed, fixed or added, grouped
-by who uses it. Nothing here has been committed to git yet.
+by who uses it. The work is on the `Aruga-Polished` git branch.
 
 ---
+
+## Newest fixes (parent portal)
+
+- **Clinic hours and vaccination hours are shown separately.**
+  - Parents see both: **Clinic hours: Mon–Fri · 8:00 AM – 5:00 PM** and **Vaccination hours: Mon, Wed, Fri · 8:00 AM – 12:00 PM** (check-in until 11:00 AM), in the same note on the Schedule and Check-in pages.
+  - Operating Hours (admin) is now labeled as the **vaccination** schedule: due dates, check-in and reminders follow it. The clinic hours are a setting (`Clinic:Hours` in `appsettings.json`).
+  - On a Tuesday or Thursday, parents see "No vaccinations today" (not "clinic closed"); "Health center closed" is only shown on a closure day. The Schedule calendar highlights only vaccination days, and the Staff calendar marks other days "No vaccines".
+  - When a day is closed (new hours, a holiday, or a removed special opening day), doses due that day move to the next vaccination day automatically.
+- **Parents are told when the health center closes** (e.g. a typhoon).
+  - Under Operating Hours → Add Exception, the admin can now close **several days at once** ("Until" date).
+  - Saving a closure notifies **every parent** in the app. Families with a child **due on a closed day** also get an **email and SMS** with the child's new date, e.g. "Leveriza Health Center is CLOSED on Mon, Oct 12 (Typhoon). Angela's Penta moved to Wed, Oct 14."
+  - SMS goes only to those families, so one closure doesn't use up the free SMS plan. For a message to everyone by email/SMS, use Announcements.
+  - The admin sees how many parents were notified and how many doses moved, and the closure is recorded in the Audit Logs. Editing only the reason doesn't send the notice again.
+- **Clearer "Today's Priority Ticket" on the Overview.**
+  - It no longer shows a big "Now serving #002" next to "Not checked in", which looked like the parent's own ticket.
+  - It now says when the clinic is closed today or when no child is linked yet, and shows "Now serving" only on clinic days.
+  - Checked-in parents see which child the ticket is for.
+- **Birth weight and height show on the parent Overview.** They were saved but never loaded on the parent side. If none was entered, it says "Not recorded".
+  - Staff and admin forms now reject impossible values (weight 0.5–7 kg, height 25–65 cm), which catches kg/cm mix-ups and missing decimal points.
+- **Relatives who bring the child (grandmother, aunt, uncle...) are shown with their relationship.**
+  - Staff can already register a relative (with or without a portal login) and link them to the child as Grandmother, Aunt, Uncle, etc. Only linked people can check a child in, which is how staff know the person is allowed to bring the child.
+  - The **queue** (Staff Queue Management, Staff dashboard and bell, Doctor/Nurse queue) now shows who checked in with their relationship, e.g. "Lourdes Luna (Grandmother)".
+  - The **Doctor/Nurse patient page** lists every linked parent/guardian with their relationship (the table shows "+1" when there is more than one); the **vaccination screen** shows who checked the child in and all guardians; the **printed vaccination card** lists all guardians.
+  - In the **parent portal profile**, each child shows "You are Isabela's Grandmother" and everyone linked to the child (before, only Mother/Father/Guardian filled in).
+  - Demo data: **lourdes.luna@demo.aruga.ph** is Isabela Cruz's grandmother (second guardian), to show this at the defense.
+- **Every child has a full schedule.** Children added straight into the database had none, so their Schedule and Records only listed doses already given.
+  - The system now builds the missing schedule when it starts: given doses count as done, the 28-day rule applies to the rest, and past dates show as overdue.
+  - The Overview marks overdue doses "Overdue" instead of "Scheduled".
+- **Fixed:**
+  - doses entered from the Yellow Book before the earlier fixes weren't ticked off on the schedule;
+  - doses past their date were never marked "Missed" (now checked every morning);
+  - texts now use plain characters, so each SMS fits in 160 characters;
+  - test records (email ending in @example.com or containing @demo.) no longer get texts either, only emails were blocked before; their made-up numbers could belong to real people.
 
 ## Latest changes (after the group's feedback)
 

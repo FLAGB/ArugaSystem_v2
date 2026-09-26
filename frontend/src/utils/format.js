@@ -61,6 +61,26 @@ export function ageLabel(birthDate) {
   return `${years} yr${years === 1 ? '' : 's'}${rem ? ` ${rem} mo${rem === 1 ? '' : 's'}` : ''}`
 }
 
+// "Rosario Santos (Grandmother)": who a person is to the child.
+export function withRelationship(name, relationship) {
+  if (!name) return '—'
+  return relationship ? `${name} (${relationship})` : name
+}
+
+// A child's linked parents/guardians, primary contact first. Takes the
+// `parents` array from /api/Children/overview, /api/Children/{id} or /all.
+export function guardiansOf(parents = []) {
+  return (parents || [])
+    .map(p => ({
+      name: p.name ?? p.parentName ?? '',
+      relationship: p.relationshipType ?? '',
+      isPrimary: !!p.isPrimaryContact,
+      contact: p.contactNo ?? null,
+    }))
+    .filter(g => g.name)
+    .sort((a, b) => (b.isPrimary - a.isPrimary) || a.name.localeCompare(b.name))
+}
+
 // Downloads rows (array of arrays, first row = header) as an Excel-friendly CSV.
 export function downloadCSV(filename, rows) {
   const cell = v => {

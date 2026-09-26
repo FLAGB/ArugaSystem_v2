@@ -561,8 +561,8 @@ const saveLink = async () => {
                 <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Date *</label><input v-model="registerForm.birthDate" type="date" :max="toISODate()" class="field" /></div>
                 <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Sex</label><select v-model="registerForm.sex" class="field"><option>Male</option><option>Female</option></select></div>
                 <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Place of Birth</label><input v-model="registerForm.placeOfBirth" type="text" class="field" /></div>
-                <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Weight (kg)</label><input v-model="registerForm.birthWeight" type="number" step="0.01" min="0" class="field" /></div>
-                <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Length (cm)</label><input v-model="registerForm.birthHeight" type="number" step="0.1" min="0" class="field" /></div>
+                <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Weight (kg)</label><input v-model="registerForm.birthWeight" type="number" step="0.01" min="0.5" max="7" placeholder="e.g. 3.2" class="field" /></div>
+                <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Length (cm)</label><input v-model="registerForm.birthHeight" type="number" step="0.1" min="25" max="65" placeholder="e.g. 50" class="field" /></div>
                 <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Allergies</label><input v-model="registerForm.allergies" type="text" class="field" /></div>
                 <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Family No.</label><input v-model="registerForm.familyNo" type="text" class="field" /></div>
                 <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Barangay</label><input v-model="registerForm.barangay" type="number" class="field" /></div>
@@ -631,8 +631,8 @@ const saveLink = async () => {
             <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Date</label><input v-model="editForm.birthDate" type="date" :max="toISODate()" class="field" /></div>
             <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Sex</label><select v-model="editForm.sex" class="field"><option>Male</option><option>Female</option></select></div>
             <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Place of Birth</label><input v-model="editForm.placeOfBirth" type="text" class="field" /></div>
-            <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Weight (kg)</label><input v-model="editForm.birthWeight" type="number" step="0.01" min="0" class="field" /></div>
-            <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Length (cm)</label><input v-model="editForm.birthHeight" type="number" step="0.1" min="0" class="field" /></div>
+            <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Weight (kg)</label><input v-model="editForm.birthWeight" type="number" step="0.01" min="0.5" max="7" placeholder="e.g. 3.2" class="field" /></div>
+            <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Birth Length (cm)</label><input v-model="editForm.birthHeight" type="number" step="0.1" min="25" max="65" placeholder="e.g. 50" class="field" /></div>
             <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Allergies</label><input v-model="editForm.allergies" type="text" class="field" /></div>
             <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Family No.</label><input v-model="editForm.familyNo" type="text" class="field" /></div>
             <div><label class="block text-xs font-semibold text-slate-500 mb-1.5">Barangay</label><input v-model="editForm.barangay" type="number" class="field" /></div>

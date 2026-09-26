@@ -124,6 +124,25 @@ builder.Services.AddScoped<IQueueQRCodeService, QueueQRCodeService>();
 // ── Build ─────────────────────────────────────────────────────
 var app = builder.Build();
 
+// Every child needs a vaccination schedule, and no upcoming dose may sit on
+// a day the clinic is closed (e.g. after the clinic hours were changed).
+using (var scope = app.Services.CreateScope())
+{
+    var timelines = scope.ServiceProvider.GetRequiredService<IVaccinationTimelineRepository>();
+    try
+    {
+        int built = await timelines.EnsureAllTimelinesAsync();
+        int linked = await timelines.LinkGivenDosesAsync();
+        int moved = await timelines.MoveDosesOffClosedDaysAsync();
+        if (built + linked + moved > 0)
+            app.Logger.LogInformation("Vaccination schedules: built {Built}, given doses linked {Linked}, moved off closed days {Moved}.", built, linked, moved);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Could not check the vaccination schedules at startup.");
+    }
+}
+
 // The API runs on plain http://localhost:57147 (see UseUrls above), so there
 // is no HTTPS port to redirect to.
 

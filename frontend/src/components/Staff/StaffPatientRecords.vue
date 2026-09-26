@@ -1580,11 +1580,11 @@ async function submitChildRegister() {
             <div class="grid grid-cols-4 gap-4">
               <div class="space-y-1">
                 <label class="text-[11px] font-bold text-stone-500 ml-1">Birth Weight (kg)</label>
-                <input v-model="regChildForm.BirthWeight" type="number" step="0.01" class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none" />
+                <input v-model="regChildForm.BirthWeight" type="number" step="0.01" min="0.5" max="7" placeholder="e.g. 3.2" class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none" />
               </div>
               <div class="space-y-1">
                 <label class="text-[11px] font-bold text-stone-500 ml-1">Birth Height (cm)</label>
-                <input v-model="regChildForm.BirthHeight" type="number" step="0.1" class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none" />
+                <input v-model="regChildForm.BirthHeight" type="number" step="0.1" min="25" max="65" placeholder="e.g. 50" class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none" />
               </div>
               <div class="space-y-1">
                 <label class="text-[11px] font-bold text-stone-500 ml-1">Barangay</label>

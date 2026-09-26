@@ -48,9 +48,6 @@
                 {{ selectedChild.age || '—' }}
                 ·
                 {{ selectedChild.sex || '—' }}
-                <template v-if="selectedChild.parentName && selectedChild.parentName !== '—'">
-                  · Parent: {{ selectedChild.parentName }}
-                </template>
               </p>
 
               <div class="mt-4 space-y-4 text-sm">
@@ -78,6 +75,17 @@
                   <div>
                     <p class="text-xs text-slate-400">Primary Contact No.</p>
                     <p class="text-slate-700">{{ selectedChild.primaryContactNo || 'Not available' }}</p>
+                  </div>
+                </div>
+
+                <div class="flex items-start gap-2.5">
+                  <Users class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p class="text-xs text-slate-400">Parents / Guardians</p>
+                    <p v-for="g in selectedChild.guardians" :key="g.name + g.relationship" class="text-slate-700">
+                      {{ g.name }} <span class="text-slate-400">· {{ g.relationship || 'Guardian' }}<template v-if="g.isPrimary"> · primary</template></span>
+                    </p>
+                    <p v-if="!selectedChild.guardians?.length" class="text-slate-700">None linked</p>
                   </div>
                 </div>
 
@@ -376,7 +384,9 @@
                   <td class="px-5 py-3.5 text-slate-500">{{ child.age }}</td>
                   <td class="px-5 py-3.5 text-slate-500">{{ child.sex }}</td>
                   <td class="px-5 py-3.5 text-slate-500">{{ child.barangay }}</td>
-                  <td class="px-5 py-3.5 text-slate-500">{{ child.parentName }}</td>
+                  <td class="px-5 py-3.5 text-slate-500">
+                    {{ child.parentName }}<span v-if="child.guardians.length > 1" class="text-slate-400" :title="child.guardians.map(g => `${g.name} (${g.relationship})`).join(', ')"> +{{ child.guardians.length - 1 }}</span>
+                  </td>
                   <td class="px-5 py-3.5 text-slate-500 text-xs">
                     <span v-if="child.nextDueDate">{{ formatDate(child.nextDueDate) }}</span>
                     <span v-else-if="child.vaccineStatus === 'Completed'" class="text-emerald-600 font-medium">Series complete</span>
@@ -483,6 +493,7 @@ import { getUser } from '@/utils/auth'
 import HealthcareSidebar from './Components/HealthcareSidebar.vue'
 import HealthcareHeader from './Components/HealthcareHeader.vue'
 import { isAtMyStation } from './Components/station.js'
+import { guardiansOf } from '@/utils/format'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
@@ -600,6 +611,8 @@ async function fetchPatients() {
         familyNo:        c.familyNo || '—',
         parentName:      c.parentName || '—',
         parentContact:   c.parentContact || null,
+        // Everyone linked to the child (mother, grandmother, uncle...), primary first
+        guardians:       guardiansOf(c.parents),
         birthDate:       c.birthDate,
         nextDueDate,
         nextVaccineName: c.nextVaccine,

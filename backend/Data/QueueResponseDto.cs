@@ -6,6 +6,10 @@ namespace AndroidWebAPI.DTOs
         public int QueueNumber { get; set; }
         public string? BarangayNo { get; set; }
         public string RequestBy { get; set; } = string.Empty;
+
+        // How the person who checked in is related to the child(ren) in this
+        // visit, e.g. "Grandmother", so staff know who brought the child.
+        public string? RequestByRelationship { get; set; }
         public string Status { get; set; } = string.Empty;
         public DateTime QueueDate { get; set; }
 

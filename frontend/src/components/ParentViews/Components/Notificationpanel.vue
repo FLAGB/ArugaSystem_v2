@@ -96,11 +96,11 @@ const filteredNotifications = computed(() => {
 })
 
 function notifIcon(type) {
-  const m = { ReminderMonth:'📅', Reminder2Week:'📅', ReminderWeek:'⏰', Reminder5Day:'⚡', Reminder3Day:'⚡', ReminderDay:'🔔', Completed:'💉', RecordUpdated:'📝', Announcement:'📢', StockOut:'📦', StockBack:'✅', OverdueMiss:'😟', Overdue5Day:'⚠️', Overdue2Week:'🚨', OverdueUrgent:'🆘', StockAlert:'📦', StockResolved:'✅' }
+  const m = { ReminderMonth:'📅', Reminder2Week:'📅', ReminderWeek:'⏰', Reminder5Day:'⚡', Reminder3Day:'⚡', ReminderDay:'🔔', Completed:'💉', RecordUpdated:'📝', Announcement:'📢', StockOut:'📦', StockBack:'✅', OverdueMiss:'😟', Overdue5Day:'⚠️', Overdue2Week:'🚨', OverdueUrgent:'🆘', StockAlert:'📦', StockResolved:'✅', ClinicClosed:'⛔' }
   return m[type] ?? '🔔'
 }
 function notifIconBg(type) {
-  const m = { ReminderMonth:'bg-blue-100', Reminder2Week:'bg-blue-100', ReminderWeek:'bg-amber-100', Reminder5Day:'bg-orange-100', Reminder3Day:'bg-orange-100', ReminderDay:'bg-orange-200', Completed:'bg-emerald-100', RecordUpdated:'bg-sky-100', Announcement:'bg-violet-100', StockOut:'bg-red-100', StockBack:'bg-emerald-100', OverdueMiss:'bg-amber-100', Overdue5Day:'bg-orange-200', Overdue2Week:'bg-red-200', OverdueUrgent:'bg-red-400', StockAlert:'bg-red-100', StockResolved:'bg-emerald-100' }
+  const m = { ReminderMonth:'bg-blue-100', Reminder2Week:'bg-blue-100', ReminderWeek:'bg-amber-100', Reminder5Day:'bg-orange-100', Reminder3Day:'bg-orange-100', ReminderDay:'bg-orange-200', Completed:'bg-emerald-100', RecordUpdated:'bg-sky-100', Announcement:'bg-violet-100', StockOut:'bg-red-100', StockBack:'bg-emerald-100', OverdueMiss:'bg-amber-100', Overdue5Day:'bg-orange-200', Overdue2Week:'bg-red-200', OverdueUrgent:'bg-red-400', StockAlert:'bg-red-100', StockResolved:'bg-emerald-100', ClinicClosed:'bg-rose-100' }
   return m[type] ?? 'bg-slate-100'
 }
 function formatRelativeTime(dateStr) {

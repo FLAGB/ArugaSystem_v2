@@ -59,9 +59,9 @@ namespace AndroidWebAPI.Services
             _context.Notifications.Add(inApp);
             tally.InApp++;
 
-            // Demo parents (DemoSeed.sql, IDs starting A2A2) have made-up
-            // emails and numbers that could belong to real people, so they
-            // only get the in-app notice.
+            // Demo parents (DemoSeed.sql, IDs starting A2A2) and test records
+            // (…@example.com, …@demo.…) have made-up emails and numbers that
+            // could belong to real people, so they only get the in-app notice.
             if (IsDemo(parent)) return;
 
             if (email && !string.IsNullOrWhiteSpace(parent.Email) &&
@@ -74,7 +74,8 @@ namespace AndroidWebAPI.Services
         }
 
         public static bool IsDemo(Parent parent) =>
-            parent.ParentID.ToString().StartsWith("a2a20000-", StringComparison.OrdinalIgnoreCase);
+            parent.ParentID.ToString().StartsWith("a2a20000-", StringComparison.OrdinalIgnoreCase) ||
+            MessageSender.IsTestAddress(parent.Email);
 
         // Notifications.Title holds 200 characters and Message 500; a longer
         // text would make the whole save fail, so the in-app copy is shortened

@@ -76,7 +76,7 @@
                 <tr class="bg-stone-50 border-b border-stone-200">
                   <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Queue No.</th>
                   <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Child(ren)</th>
-                  <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Parent</th>
+                  <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Parent / Guardian</th>
                   <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Date</th>
                   <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Status</th>
                   <th class="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500 text-right">Actions</th>
@@ -182,6 +182,7 @@ import {
 } from "lucide-vue-next";
 import StaffSidebar from "./StaffSidebar.vue";
 import StaffTopbar from "./StaffTopbar.vue";
+import { withRelationship } from "@/utils/format";
 
 const API_BASE = "http://localhost:57147/api";
 
@@ -233,7 +234,8 @@ const loadQueues = async () => {
       queueNumber: q.queueNumber,
       no: `Q-${String(q.queueNumber).padStart(3, "0")}`,
       child: q.children?.map((c) => c.name).join(", ") || "—",
-      parent: q.requestBy || "—",
+      // "Rosario Santos (Grandmother)": who brought the child
+      parent: withRelationship(q.requestBy, q.requestByRelationship),
       barangayNo: q.barangayNo,
       queueDate: q.queueDate,
       status: q.status || "Waiting",

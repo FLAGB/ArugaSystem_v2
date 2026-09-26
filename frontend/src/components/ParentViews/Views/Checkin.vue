@@ -147,12 +147,10 @@
                 </template>
 
                 <p v-if="qrError" class="text-red-300 text-xs font-bold mt-4">{{ qrError }}</p>
-
-                <p class="text-white/30 text-[10px] font-medium mt-6">
-                  Clinic hours: {{ clinic?.hoursText || '—' }}<span v-if="clinic?.checkInUntil"> · Check-in until {{ clinic.checkInUntil }} today</span>
-                </p>
               </div>
             </div>
+
+            <ClinicHoursNote :clinic="clinic" show-check-in />
           </div>
         </main>
       </div>
@@ -226,6 +224,7 @@ import HeaderNav from '../Components/Headernav.vue'
 import ChildSidebar from '../Components/Childsidebar.vue'
 import ProfileModal from '../Components/Profilemodal.vue'
 import NotificationPanel from '../Components/Notificationpanel.vue'
+import ClinicHoursNote from '../Components/ClinicHoursNote.vue'
 
 import { getAccount, logout as authLogout } from '@/utils/auth'
 import api from '../Composables/api.js'
@@ -320,6 +319,8 @@ async function fetchChildren() {
         relationshipType,
         isPrimaryContact: child.isPrimaryContact ?? child.IsPrimaryContact,
         canReceiveNotifications: child.canReceiveNotifications ?? child.CanReceiveNotifications,
+        // Everyone linked to the child: "Maria Santos (Mother); Rosario Santos (Grandmother)"
+        guardians: child.guardians ?? child.Guardians,
 
         // Same derivation as ParentOverview.vue — the dashboard endpoint only
         // returns the relationship for the currently logged-in parent, so we
@@ -379,10 +380,13 @@ const qrRequired = ref(true)    // GET /QueueQRCode/settings
 const closedMessage = computed(() => {
   const c = clinic.value
   if (!c) return ''
-  if (!c.openToday) {
-    return `The clinic is closed today${c.reason ? ` (${c.reason})` : ''}. The next clinic day is ${c.nextOpenDay}.`
+  if (c.closedToday) {
+    return `The health center is closed today${c.reason ? ` (${c.reason})` : ''}. The next vaccination day is ${c.nextOpenDay}.`
   }
-  return `Check-in today is from ${c.opensAt} until ${c.checkInUntil}. The next clinic day is ${c.nextOpenDay}.`
+  if (!c.openToday) {
+    return `There are no vaccinations today. The next vaccination day is ${c.nextOpenDay}.`
+  }
+  return `Check-in for vaccinations today is from ${c.opensAt} until ${c.checkInUntil}. The next vaccination day is ${c.nextOpenDay}.`
 })
 
 async function loadClinicInfo() {

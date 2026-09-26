@@ -38,6 +38,7 @@ they are set up.
 | "Vaccine given", "record updated", new-account and password-reset emails | ✓ | ✓ | |
 | Announcements | ✓ | if ticked | if ticked |
 | Weekly stock check (to Staff and Admin) | ✓ | ✓ | |
+| Health center closed (admin adds a closure under Operating Hours) | ✓ all parents | families due that day | families due that day |
 
 SMS is kept to the messages where timing matters, so it fits a free plan.
 `Sms:DailyLimit` (default 50) stops texts for the rest of the day once reached;
@@ -75,8 +76,9 @@ numbers: texts go to whatever number is on file.
 
 While a channel isn't set up, the message (including Forgot Password codes)
 is printed in this console window instead, so you can still test everything.
-Demo accounts (…@demo.aruga.ph and the DemoSeed parents) never receive real
-email or SMS.
+Demo accounts (…@demo.aruga.ph and the DemoSeed parents) and test records
+(anyone whose email ends in @example.com or contains @demo.) never receive real
+email or SMS, because their made-up numbers could belong to real people.
 
 ## Weekly stock check
 
