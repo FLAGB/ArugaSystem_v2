@@ -3,13 +3,29 @@
 // Register in Program.cs with:
 //   builder.Services.AddHostedService<NotificationGeneratorService>();
 //
-// This runs once per day at startup + every 24 hours.
-// PRE-DUE:  sends reminders at 30, 7, 5, and 1 day before each scheduled dose.
-// POST-DUE: sends overdue follow-ups at 1, 5, 14, and 30 days after a missed dose.
-// STOCK:    every Wednesday checks VaccineInventory and alerts affected parents.
+// Runs once at startup, then every day at DailyRunHour (server local time).
+// PRE-DUE:  reminders 14, 7, 5, 3 and 1 day(s) before each scheduled dose.
+// POST-DUE: overdue follow-ups 1, 5, 14 and 30 days after a missed dose.
+// STOCK:    if a vaccine is out of stock, parents of children due for it in
+//           the next 7 days are told not to come for that dose yet, and are
+//           told again once it's back in stock (see StockNotices.cs).
+//
+// Every notice goes to the parent's notification bell AND by email/SMS
+// (ParentNotifier), to every linked parent who accepts notifications.
+//
+// Due dates come from dbo.VaccinationTimeline, the same schedule parents
+// and health workers see in the app (it is recalculated whenever a dose is
+// recorded), and the clinic's days/hours in the messages come from the
+// Operating Hours the admin sets.
+//
+// For each dose only ONE notification is created per run: the tightest
+// threshold the dose has reached that hasn't been sent yet. That prevents a
+// burst of stale reminders (e.g. "in 1 month" + "tomorrow") when a child is
+// first processed close to, or after, the due date.
 
-using AndroidWebAPI.Data;   // ← This is what's missing — AppDbContext lives here
+using AndroidWebAPI.Data;
 using AndroidWebAPI.Models;
+using AndroidWebAPI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,15 +35,17 @@ public class NotificationGeneratorService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<NotificationGeneratorService> _logger;
 
-    // Days BEFORE due date to send pre-reminders
-    private static readonly int[] PreReminders  = { 30, 7, 5, 1 };
+    // Days BEFORE the due date to send pre-reminders
+    private static readonly int[] PreReminders = { 14, 7, 5, 3, 1 };
 
-    // Days AFTER due date to send overdue follow-ups
-    // 1 day → gentle miss, 5 days → overdue, 14 days → protection gap, 30 days → urgent
+    // Days AFTER the due date to send overdue follow-ups
     private static readonly int[] PostReminders = { 1, 5, 14, 30 };
 
-    // Low stock threshold — alert parents when stock drops to or below this
-    private const int LowStockThreshold = 5;
+    // Overdue follow-ups stop after this many days: the 30-day notice is the last
+    private const int StopAfterDaysLate = 45;
+
+    // Hour of day (0-23, server local time) for the daily run
+    private const int DailyRunHour = 8;
 
     public NotificationGeneratorService(
         IServiceScopeFactory scopeFactory,
@@ -39,7 +57,6 @@ public class NotificationGeneratorService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Run immediately on startup, then every 24 hours
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -51,7 +68,11 @@ public class NotificationGeneratorService : BackgroundService
                 _logger.LogError(ex, "Error generating notifications");
             }
 
-            await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+            // Wait until the next daily run time instead of "24h from startup"
+            var now = DateTime.Now;
+            var next = now.Date.AddHours(DailyRunHour);
+            if (next <= now) next = next.AddDays(1);
+            await Task.Delay(next - now, stoppingToken);
         }
     }
 
@@ -59,265 +80,206 @@ public class NotificationGeneratorService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var notifier = scope.ServiceProvider.GetRequiredService<ParentNotifier>();
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateTime.Today;
+        string clinicHoursShort = await ClinicCalendar.DescribeHoursAsync(context);
+        string clinicInfo = $"Leveriza Health Center ({clinicHoursShort})";
 
-        // ── 1. VACCINE REMINDERS ─────────────────────────────────────────────
-        //
-        // For each child, compute their upcoming dose dates using the same
-        // MinIntervalDays logic as the frontend, then create notifications
-        // at 30/7/5/1 days before each due date — but only if a notification
-        // of that type doesn't already exist for that child+vaccine+dose.
+        // Doses still to be given, from the live timeline
+        var due = await context.VaccinationTimelines
+            .Include(t => t.Child)
+            .Include(t => t.Vaccine)
+            .Where(t => t.Status != "Completed" && t.Status != "Cancelled"
+                     && t.ScheduledDate <= today.AddDays(PreReminders.Max())
+                     && t.ScheduledDate >= today.AddDays(-StopAfterDaysLate))
+            .ToListAsync();
 
-var children = await context.Children
-    .Include(c => c.ParentRelationships)
-    .ToListAsync();
+        // Keys of notifications that already exist, for fast duplicate checks
+        var sentKeys = (await context.Notifications
+                .Where(n => n.ParentID != null)
+                .Select(n => new { n.ParentID, n.ChildID, n.VaccineID, n.DoseNumber, n.Type })
+                .ToListAsync())
+            .Select(n => Key(n.ParentID, n.ChildID, n.VaccineID, n.DoseNumber, n.Type))
+            .ToHashSet();
 
+        var tally = new ParentNotifier.Delivery();
+        var parentsByChild = new Dictionary<Guid, List<Parent>>();
 
-        var vaccineDoses = await context.VaccineDoses
-        .Include(d => d.Vaccine)
-        .OrderBy(d => d.VaccineID).ThenBy(d => d.DoseNumber)
-        .ToListAsync();
-
-        var existingRecords = await context.VaccinationRecords.ToListAsync();
-        var existingNotifications = await context.Notifications.ToListAsync();
-
-        foreach (var child in children)
+        foreach (var entry in due)
         {
-            var primaryParent = child.ParentRelationships
-    .FirstOrDefault(r =>
-        r.IsPrimaryContact &&
-        r.Status == "Active");
+            var child = entry.Child;
+            if (child == null) continue;
 
-if (primaryParent == null)
-    continue;
+            if (!parentsByChild.TryGetValue(child.ChildID, out var parents))
+                parentsByChild[child.ChildID] = parents = await notifier.ParentsOfChildAsync(child.ChildID);
+            if (parents.Count == 0) continue;
 
-            var schedule  = ComputeSchedule(child, vaccineDoses, existingRecords);
             string childName = $"{child.FirstName} {child.LastName}";
+            string vaccineName = entry.Vaccine?.VaccineName ?? $"Vaccine {entry.VaccineID}";
+            string doseLabel = $"Dose {entry.DoseNumber}";
+            string dateLabel = entry.ScheduledDate.ToString("MMMM d, yyyy");
 
-            foreach (var entry in schedule)
+            // Positive = days until due, negative = days overdue
+            int daysUntil = (entry.ScheduledDate.Date - today).Days;
+
+            string type, title, message;
+
+            if (daysUntil >= 1)
             {
-                bool isAdministered = existingRecords.Any(r =>
-                    r.ChildID    == child.ChildID    &&
-                    r.VaccineID  == entry.VaccineID  &&
-                    r.DoseNumber == entry.DoseNumber &&
-                    r.Status     == "Completed");
+                // ── PRE-DUE ──────────────────────────────────────────────
+                // Tightest threshold reached: e.g. 10 days out -> the 14-day
+                // reminder; 4 days out -> the 5-day reminder. 0 = too early.
+                int threshold = PreReminders
+                    .Where(d => d >= daysUntil)
+                    .DefaultIfEmpty(0)
+                    .Min();
 
-                if (isAdministered) continue;
+                if (threshold == 0) continue;
 
-                string doseLabel = $"Dose {entry.DoseNumber}";
-                string dateLabel = entry.ScheduledDate.ToString("MMMM d, yyyy");
-
-                // ── PRE-DUE REMINDERS ────────────────────────────────────────
-                foreach (int daysBefore in PreReminders)
-                {
-                    var triggerDate = DateOnly.FromDateTime(entry.ScheduledDate.AddDays(-daysBefore));
-                    if (triggerDate > today) continue;
-
-                    string type = daysBefore switch
-                    {
-                        30 => "ReminderMonth",
-                        7  => "ReminderWeek",
-                        5  => "Reminder5Day",
-                        1  => "ReminderDay",
-                        _  => "Reminder"
-                    };
-
-                    if (existingNotifications.Any(n =>
-                            n.ParentID == primaryParent.ParentID && n.ChildID == child.ChildID &&
-                            n.VaccineID == entry.VaccineID && n.DoseNumber == entry.DoseNumber &&
-                            n.Type == type)) continue;
-
-                    string timeLabel = daysBefore switch
-                    {
-                        30 => "in 1 month",
-                        7  => "in 1 week",
-                        5  => "in 5 days",
-                        1  => "tomorrow",
-                        _  => $"in {daysBefore} days"
-                    };
-
-                    // Tone escalates as the date approaches
-                    string message = daysBefore switch
-                    {
-                        30 => $"Heads up! {entry.VaccineName} ({doseLabel}) for {childName} is coming up on {dateLabel}. " +
-                              $"Plan a visit to Leveriza Health Center on Mon, Wed, or Fri · 8:00 AM – 12:00 PM.",
-                        7  => $"{entry.VaccineName} ({doseLabel}) for {childName} is due on {dateLabel} — that's one week away. " +
-                              $"Make sure to visit Leveriza Health Center on a Mon, Wed, or Fri · 8:00 AM – 12:00 PM.",
-                        5  => $"Don't forget! {entry.VaccineName} ({doseLabel}) for {childName} is due on {dateLabel}. " +
-                              $"Only 5 days left. Visit Leveriza Health Center on Mon, Wed, or Fri · 8:00 AM – 12:00 PM.",
-                        1  => $"Reminder: {entry.VaccineName} ({doseLabel}) for {childName} is scheduled TOMORROW, {dateLabel}. " +
-                              $"Please visit Leveriza Health Center between 8:00 AM and 12:00 PM.",
-                        _  => $"{entry.VaccineName} ({doseLabel}) for {childName} is due on {dateLabel}."
-                    };
-
-                    var notif = new Notification
-                    {
-                        ParentID = primaryParent.ParentID,
-                        ChildID       = child.ChildID,
-                        VaccineID     = entry.VaccineID,
-                        DoseNumber    = entry.DoseNumber,
-                        Type          = type,
-                        Title         = $"Vaccine due {timeLabel} — {childName}",
-                        Message       = message,
-                        ScheduledDate = entry.ScheduledDate,
-                        IsRead        = false,
-                        CreatedAt     = DateTime.Now
-                    };
-                    context.Notifications.Add(notif);
-                    existingNotifications.Add(notif);
-                }
-
-                // ── POST-DUE OVERDUE FOLLOW-UPS ──────────────────────────────
-                // Only fire if the scheduled date has already passed
-                if (DateOnly.FromDateTime(entry.ScheduledDate) >= today) continue;
-
-                foreach (int daysAfter in PostReminders)
-                {
-                    var triggerDate = DateOnly.FromDateTime(entry.ScheduledDate.AddDays(daysAfter));
-                    if (triggerDate > today) continue;
-
-                    string type = daysAfter switch
-                    {
-                        1  => "OverdueMiss",       // gentle — missed yesterday
-                        5  => "Overdue5Day",        // overdue — act this week
-                        14 => "Overdue2Week",       // protection gap forming
-                        30 => "OverdueUrgent",      // urgent — 1 month lapsed
-                        _  => "Overdue"
-                    };
-
-                    if (existingNotifications.Any(n =>
-                            n.ParentID == primaryParent.ParentID && n.ChildID == child.ChildID &&
-                            n.VaccineID == entry.VaccineID && n.DoseNumber == entry.DoseNumber &&
-                            n.Type == type)) continue;
-
-                    // Urgency escalates with each post-due interval
-                    (string title, string message) = daysAfter switch
-                    {
-                        1 => (
-                            $"Missed vaccine — {childName}",
-                            $"{entry.VaccineName} ({doseLabel}) was scheduled yesterday, {dateLabel}. " +
-                            $"Please visit Leveriza Health Center as soon as possible on the next available Mon, Wed, or Fri · 8:00 AM – 12:00 PM."
-                        ),
-                        5 => (
-                            $"Vaccine overdue — {childName}",
-                            $"{entry.VaccineName} ({doseLabel}) for {childName} is now 5 days overdue (was due {dateLabel}). " +
-                            $"Please visit Leveriza Health Center this week to keep {childName.Split(' ')[0]} protected."
-                        ),
-                        14 => (
-                            $"2 weeks overdue — {childName}",
-                            $"{entry.VaccineName} ({doseLabel}) is 2 weeks overdue for {childName}. " +
-                            $"A delay this long may leave your child unprotected. Please visit Leveriza Health Center urgently on Mon, Wed, or Fri · 8:00 AM – 12:00 PM."
-                        ),
-                        30 => (
-                            $"URGENT: 1 month overdue — {childName}",
-                            $"{entry.VaccineName} ({doseLabel}) for {childName} is now 1 month overdue. " +
-                            $"Immediate vaccination is strongly recommended. Please visit Leveriza Health Center on the nearest Mon, Wed, or Fri · 8:00 AM – 12:00 PM."
-                        ),
-                        _ => (
-                            $"Vaccine overdue — {childName}",
-                            $"{entry.VaccineName} ({doseLabel}) is overdue for {childName}."
-                        )
-                    };
-
-                    var notif = new Notification
-                    {
-                        ParentID = primaryParent.ParentID,
-                        ChildID       = child.ChildID,
-                        VaccineID     = entry.VaccineID,
-                        DoseNumber    = entry.DoseNumber,
-                        Type          = type,
-                        Title         = title,
-                        Message       = message,
-                        ScheduledDate = entry.ScheduledDate,
-                        IsRead        = false,
-                        CreatedAt     = DateTime.Now
-                    };
-                    context.Notifications.Add(notif);
-                    existingNotifications.Add(notif);
-                    
-                }
+                string timeLabel = daysUntil == 1 ? "tomorrow" : $"in {daysUntil} days";
+                type = PreDueType(threshold);
+                title = $"Vaccine due {timeLabel} — {childName}";
+                message = PreDueMessage(threshold, daysUntil, vaccineName, doseLabel, childName, dateLabel, clinicInfo);
             }
-        }
-    await context.SaveChangesAsync();
-        _logger.LogInformation("Notifications generated at {Time}", DateTime.Now);
-    }
-
-
-    // ── Schedule computation (mirrors frontend VACCINE_MASTER logic) ──────────
-    private static List<ScheduleEntry> ComputeSchedule(
-    Child child,
-    List<VaccineDose> allDoses,
-    List<VaccinationRecord> records)
-{
-    var result     = new List<ScheduleEntry>();
-    var vaccineIds = allDoses.Select(d => d.VaccineID).Distinct().OrderBy(x => x);
-    var birth      = child.BirthDate;
-
-    foreach (var vaccineId in vaccineIds)
-    {
-        var doses    = allDoses.Where(d => d.VaccineID == vaccineId)
-                               .OrderBy(d => d.DoseNumber).ToList();
-        DateTime? prevDate = null;
-
-        foreach (var dose in doses)
-        {
-            // ✅ Check if this dose was actually administered
-            var administered = records.FirstOrDefault(r =>
-                r.ChildID    == child.ChildID   &&
-                r.VaccineID  == vaccineId        &&
-                r.DoseNumber == dose.DoseNumber  &&
-                r.Status     == "Completed");
-
-            DateTime scheduled;
-
-            if (administered?.VaccinationDate != null)
+            else if (daysUntil < 0)
             {
-                // ✅ Use ACTUAL date — cascades correctly to next dose
-                scheduled = administered.VaccinationDate;
+                // ── POST-DUE ─────────────────────────────────────────────
+                int daysLate = -daysUntil;
+
+                // Latest overdue threshold reached (0 = none yet)
+                int threshold = PostReminders
+                    .Where(d => d <= daysLate)
+                    .DefaultIfEmpty(0)
+                    .Max();
+
+                if (threshold == 0) continue;
+
+                type = OverdueType(threshold);
+                (title, message) = OverdueText(
+                    threshold, daysLate, vaccineName, doseLabel,
+                    childName, child.FirstName, dateLabel, clinicInfo);
             }
             else
             {
-                // Not yet taken — compute from last known date
-                DateTime baseDate = dose.DoseNumber == 1
-                    ? birth.AddDays(dose.MinIntervalDays)
-                    : (prevDate ?? birth).AddDays(dose.MinIntervalDays);
-
-                scheduled = SnapToClinicDay(baseDate);
+                // daysUntil == 0 (due today): the "tomorrow" reminder went out
+                // yesterday and overdue follow-ups start tomorrow.
+                continue;
             }
 
-            // ✅ This is the key — prevDate carries forward the actual date
-            prevDate = scheduled;
-
-            result.Add(new ScheduleEntry
+            // Every reminder goes to the app and by email. Texts are limited
+            // (TextBee free plan: 50 a day), so only the two that need action
+            // right away also go by SMS: "due tomorrow" and "missed yesterday".
+            string? smsText = type switch
             {
-                VaccineID     = vaccineId,
-                VaccineName   = doses[0].Vaccine?.VaccineName ?? $"Vaccine {vaccineId}",
-                DoseNumber    = dose.DoseNumber,
-                ScheduledDate = scheduled
-            });
+                "ReminderDay" => $"Leveriza Health Center: {child.FirstName}'s {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} is due TOMORROW, {entry.ScheduledDate:MMM d}. See you at the clinic ({clinicHoursShort}).",
+                "OverdueMiss" => $"Leveriza Health Center: {child.FirstName} missed {entry.Vaccine?.Abbreviation ?? vaccineName} {doseLabel} on {entry.ScheduledDate:MMM d}. Please visit on the next clinic day ({clinicHoursShort}).",
+                _ => null,
+            };
+
+            foreach (var parent in parents)
+            {
+                if (!sentKeys.Add(Key(parent.ParentID, child.ChildID, entry.VaccineID, entry.DoseNumber, type)))
+                    continue;
+
+                await notifier.NotifyAsync(parent, new Notification
+                {
+                    ChildID       = child.ChildID,
+                    VaccineID     = entry.VaccineID,
+                    DoseNumber    = entry.DoseNumber,
+                    Type          = type,
+                    Title         = title,
+                    Message       = message,
+                    ScheduledDate = entry.ScheduledDate,
+                    IsRead        = false,
+                }, tally, sms: smsText != null, smsText: smsText);
+            }
         }
+
+        await context.SaveChangesAsync();
+
+        var stock = await StockNotices.RunAsync(context, notifier);
+
+        // Weekly stock check for the Admission Staff and Administrator
+        // (Wednesdays unless Inventory:StockCheckDay says otherwise)
+        var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        int stockCheck = 0;
+        if (today.DayOfWeek == StockCheck.CheckDay(config))
+            stockCheck = await StockCheck.SendAsync(context, scope.ServiceProvider.GetRequiredService<MessageSender>());
+
+        _logger.LogInformation(
+            "Notifications generated at {Time}: {Count} reminders ({Emails} emails, {Texts} SMS), {Stock} stock notices, stock check sent to {Check}",
+            DateTime.Now, tally.InApp, tally.Emails, tally.Texts, stock.InApp, stockCheck);
     }
 
-    return result;
-}
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static DateTime SnapToClinicDay(DateTime date)
+    private static string Key(Guid? parentId, Guid? childId, int? vaccineId, int? doseNumber, string type)
+        => $"{parentId}|{childId}|{vaccineId}|{doseNumber}|{type}";
+
+    private static string PreDueType(int daysBefore) => daysBefore switch
     {
-        while (date.DayOfWeek != DayOfWeek.Monday &&
-               date.DayOfWeek != DayOfWeek.Wednesday &&
-               date.DayOfWeek != DayOfWeek.Friday)
+        14 => "Reminder2Week",
+        7  => "ReminderWeek",
+        5  => "Reminder5Day",
+        3  => "Reminder3Day",
+        1  => "ReminderDay",
+        _  => "Reminder"
+    };
+
+    private static string OverdueType(int daysAfter) => daysAfter switch
+    {
+        1  => "OverdueMiss",
+        5  => "Overdue5Day",
+        14 => "Overdue2Week",
+        30 => "OverdueUrgent",
+        _  => "Overdue"
+    };
+
+    // Wording follows the threshold (tone) but uses the REAL number of days left
+    private static string PreDueMessage(
+        int threshold, int daysUntil, string vaccine, string dose, string childName, string dateLabel, string clinicInfo)
+    {
+        string what = $"{vaccine} ({dose}) for {childName}";
+
+        return threshold switch
         {
-            date = date.AddDays(1);
-        }
-        return date;
+            14 => $"Heads up! {what} is due on {dateLabel}, about {daysUntil} days from now. " +
+                  $"Please start planning your visit to {clinicInfo}.",
+            7  => $"{what} is due on {dateLabel} — {daysUntil} days away. " +
+                  $"Make sure to visit {clinicInfo}.",
+            5  => $"Don't forget! {what} is due on {dateLabel}. Only {daysUntil} days left. " +
+                  $"Visit {clinicInfo}.",
+            3  => $"{what} is due on {dateLabel} — just {daysUntil} days away. " +
+                  $"Please get ready to visit {clinicInfo}.",
+            1  => $"Reminder: {what} is scheduled TOMORROW, {dateLabel}. " +
+                  $"Please visit {clinicInfo}.",
+            _  => $"{what} is due on {dateLabel}."
+        };
     }
 
-    private record ScheduleEntry
+    private static (string Title, string Message) OverdueText(
+        int threshold, int daysLate, string vaccine, string dose,
+        string childName, string firstName, string dateLabel, string clinicInfo)
     {
-        public int      VaccineID     { get; init; }
-        public string   VaccineName   { get; init; } = string.Empty;
-        public int      DoseNumber    { get; init; }
-        public DateTime ScheduledDate { get; init; }
+        string what = $"{vaccine} ({dose}) for {childName}";
+
+        return threshold switch
+        {
+            1 => ($"Missed vaccine — {childName}",
+                  $"{what} was scheduled on {dateLabel}. " +
+                  $"Please visit {clinicInfo} as soon as possible."),
+            5 => ($"Vaccine overdue — {childName}",
+                  $"{what} is now {daysLate} days overdue (was due {dateLabel}). " +
+                  $"Please visit {clinicInfo} this week to keep {firstName} protected."),
+            14 => ($"2 weeks overdue — {childName}",
+                  $"{what} is {daysLate} days overdue. " +
+                  $"A delay this long may leave your child unprotected. Please visit {clinicInfo} urgently."),
+            30 => ($"URGENT: 1 month overdue — {childName}",
+                  $"{what} is now {daysLate} days overdue. " +
+                  $"Immediate vaccination is strongly recommended. Please visit {clinicInfo}."),
+            _ => ($"Vaccine overdue — {childName}",
+                  $"{what} is overdue.")
+        };
     }
 }

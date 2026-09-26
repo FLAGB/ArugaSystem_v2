@@ -66,8 +66,8 @@
                 </table>
               </div>
               <div class="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-                <p class="text-[10px] text-slate-400 font-medium">Full history available as PDF</p>
-                <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Download PDF</button>
+                <p class="text-[10px] text-slate-400 font-medium">Print or save the full immunization record as a PDF</p>
+                <button @click="downloadRecord" :disabled="!selectedChild" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">Download PDF</button>
               </div>
             </div>
           </div>
@@ -91,6 +91,7 @@ import ProfileModal from '../Components/Profilemodal.vue'
 import NotificationPanel from '../Components/Notificationpanel.vue'
 import { getAccount, logout as authLogout } from '@/utils/auth'
 import api from '../Composables/api.js'
+import { fetchChildSchedule, buildSchedule } from '../Composables/childSchedule.js'
 
 const router = useRouter()
 
@@ -98,6 +99,13 @@ const router = useRouter()
 const parentData        = ref(null)
 const children           = ref([])
 const selectedChild      = ref(null)
+
+// Opens the printable immunization record; choose "Save as PDF" in the
+// browser's print dialog to keep a copy.
+function downloadRecord() {
+  if (!selectedChild.value) return
+  window.open(`/print/vaccination-card/${selectedChild.value.childID}?print=1`, '_blank')
+}
 const showProfile        = ref(false)
 const showNotifications  = ref(false)
 const unreadCount        = ref(0)
@@ -111,26 +119,10 @@ const recordsLoading     = ref(false)
 const recordFilter       = ref('All')
 const recordStats        = ref({ completed: 0, scheduled: 0, overdue: 0 })
 
-// ── Vaccine master (DOH schedule) — duplicated per-page, see HARD RULE 1 ───
-// vaccineId values below are the real ArugaSystemDB.dbo.Vaccines.VaccineID
-// rows (confirmed 2026-09-22): BCG=5, Hepatitis B=6, Pentavalent=7, OPV=8,
-// IPV=9, PCV=10, MMR=11. If that table's IDs ever get re-seeded, these need
-// to be updated to match — the completed-record lookup below depends on it.
-const VACCINE_MASTER = [
-  { vaccineId: 5,  name: 'BCG Vaccine',                      doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 6,  name: 'Hepatitis B Vaccine',              doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 7,  name: 'Pentavalent (DPT-Hep B-HIB)',      doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 8,  name: 'Oral Polio Vaccine (OPV)',         doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 9,  name: 'Inactivated Polio Vaccine (IPV)',  doses: [{ n: 1, gap: 105 }, { n: 2, gap: 165}] },
-  { vaccineId: 10, name: 'Pneumococcal Conj. Vaccine (PCV)', doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 11, name: 'MMR Vaccine',                      doses: [{ n: 1, gap: 270 }, { n: 2, gap: 90 }] },
-]
+// ── Vaccination schedule — from the backend timeline, shared with the
+//    other parent pages (Composables/childSchedule.js) ─────────────────────
+const scheduleTimeline = ref([])
 
-function snapToClinicDay(date) {
-  let d = new Date(date)
-  while (!(isMonday(d) || isWednesday(d) || isFriday(d))) d = addDays(d, 1)
-  return d
-}
 function formatDisplayDate(date) {
   if (!date) return '—'
   try { return format(new Date(date), 'MMM d, yyyy') } catch { return '—' }
@@ -142,69 +134,7 @@ function getStatusClass(status) {
   return 'bg-amber-100 text-amber-700'
 }
 
-const computedVaccineList = computed(() => {
-  if (!selectedChild.value?.birthDate) return []
-  const birth = new Date(selectedChild.value.birthDate)
-  const result = []
-
-  for (const vaccine of VACCINE_MASTER) {
-    let prevActualDate   = null
-    let prevOriginalDate = null
-
-    for (const dose of vaccine.doses) {
-      // Match by vaccineId now that VACCINE_MASTER's ids above are the real
-      // backend Vaccines.VaccineID values, not frontend guesses. ID matching
-      // is exact; matching on vaccineName (the previous approach) turned out
-      // to be fragile — e.g. this page's hardcoded "Pentavalent (DPT-Hep
-      // B-HIB)" vs. the backend's "Pentavalent (DPT-HepB-Hib)" differ by a
-      // single space, which silently failed a string-equality match and
-      // still produced a duplicate row.
-      const record = completedRecords.value.find(r =>
-        Number(r.vaccineID ?? r.vaccineId ?? r.VaccineID) === vaccine.vaccineId &&
-        Number(r.doseNumber ?? r.DoseNumber) === dose.n &&
-        r.status === 'Completed' &&
-        r.dateAdministered
-      )
-
-      const originalDueDate = dose.n === 1
-        ? snapToClinicDay(addDays(birth, dose.gap))
-        : snapToClinicDay(addDays(prevOriginalDate ?? birth, dose.gap))
-
-      let scheduledDate
-      if (record) {
-        scheduledDate = new Date(record.dateAdministered)
-      } else if (dose.n === 1) {
-        scheduledDate = snapToClinicDay(addDays(birth, dose.gap))
-      } else {
-        const base = prevActualDate ?? prevOriginalDate ?? birth
-        scheduledDate = snapToClinicDay(addDays(base, dose.gap))
-      }
-
-      const administeredDate = record ? new Date(record.dateAdministered) : null
-      const wasLate = record ? administeredDate > originalDueDate : false
-      const daysLate = wasLate
-        ? Math.max(0, Math.round((administeredDate - originalDueDate) / 86400000))
-        : 0
-
-      prevOriginalDate = originalDueDate
-      prevActualDate   = administeredDate ?? null
-
-      result.push({
-        doseId:          `${vaccine.vaccineId}-${dose.n}`,
-        vaccineId:       vaccine.vaccineId,
-        name:            vaccine.name,
-        doseNumber:      dose.n,
-        scheduledDate,
-        originalDueDate,
-        isCompleted:     !!record,
-        administeredDate,
-        wasLate,
-        daysLate,
-      })
-    }
-  }
-  return result
-})
+const computedVaccineList = computed(() => buildSchedule(scheduleTimeline.value, completedRecords.value))
 
 const filteredRecords = computed(() => {
   if (recordFilter.value === 'All') return vaccinationHistory.value
@@ -227,17 +157,13 @@ async function fetchRecords(childId) {
   if (!childId) return
   recordsLoading.value = true
   try {
-    const res = await api.get(`/VaccinationRecords/child/${childId}`)
-    // Backend returns vaccinationDate/vaccinationRecordID — normalize to the
-    // dateAdministered/recordId names the rest of this page already expects.
-    completedRecords.value = res.data.map(r => ({
-      ...r,
-      recordId:         r.recordId ?? r.vaccinationRecordID ?? null,
-      dateAdministered: r.dateAdministered ?? r.vaccinationDate ?? null,
-    }))
+    const { timeline, records } = await fetchChildSchedule(childId)
+    scheduleTimeline.value = timeline
+    completedRecords.value = records.filter(r => (r.status ?? 'Completed') === 'Completed')
     await new Promise(r => setTimeout(r, 0))
 
     const today = new Date()
+    today.setHours(0, 0, 0, 0)
     const upcomingRows = computedVaccineList.value
       .filter(v => !v.isCompleted)
       .map(v => ({

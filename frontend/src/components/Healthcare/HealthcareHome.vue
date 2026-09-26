@@ -1,10 +1,13 @@
 <template>
   <div class="flex h-screen bg-slate-50 font-sans antialiased text-slate-900">
 
-    <HealthcareSidebar @logout="logout" />
+    <HealthcareSidebar />
 
+    <!-- MAIN CONTENT -->
     <div class="flex flex-col flex-1 overflow-hidden">
-      <HealthcareHeader :worker="worker" />
+
+      <!-- TOP BAR -->
+      <HealthcareHeader />
 
       <!-- PAGE CONTENT -->
       <main class="flex-1 overflow-y-auto p-6">
@@ -15,22 +18,59 @@
           <p class="text-sm text-slate-500 mt-1">{{ todayFormatted }}</p>
         </div>
 
-        <!-- LOAD ERROR -->
-        <div v-if="loadError" class="mb-6 flex items-start gap-2 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
-          <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{{ loadError }}</span>
+        <!-- MY STATION + TODAY'S QUEUE -->
+        <div class="bg-white rounded-xl border border-slate-200 mb-6">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div>
+              <h2 class="font-semibold text-slate-800">Today's Queue</h2>
+              <p class="text-xs text-slate-400 mt-0.5">The Admission Staff sends each patient to a station — updates automatically</p>
+            </div>
+            <button @click="router.push('/healthcare/queue')"
+              class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5">
+              <ListChecks class="w-3.5 h-3.5" />
+              Go to Queue
+            </button>
+          </div>
+
+          <div class="flex divide-x divide-slate-100">
+            <!-- My station -->
+            <div class="w-64 shrink-0 p-5 flex flex-col items-center justify-center text-center">
+              <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                {{ myStation ? myStation.roomName : 'My Station' }}
+              </p>
+              <template v-if="myVisit">
+                <p class="text-4xl font-black text-slate-800">#{{ myVisit.queueNumber }}</p>
+                <p class="text-xs text-slate-500 mt-1 truncate max-w-full">{{ myVisit.children.map(c => c.name).join(', ') }}</p>
+                <button @click="openVisit(myVisit)"
+                  class="mt-3 text-xs bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5">
+                  <Syringe class="w-3.5 h-3.5" /> Open Visit
+                </button>
+              </template>
+              <template v-else>
+                <p class="text-4xl font-black text-slate-300">—</p>
+                <p class="text-xs text-slate-400 mt-1">
+                  {{ myStation ? 'No patient sent to you yet' : 'You are not assigned to a station' }}
+                </p>
+              </template>
+            </div>
+
+            <!-- Waiting list -->
+            <div class="flex-1 p-5">
+              <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Waiting for a station ({{ waitingQueue.length }})</p>
+              <div v-if="loadingQueue" class="text-sm text-slate-400 py-4 text-center">Loading...</div>
+              <div v-else-if="waitingQueue.length === 0" class="text-sm text-slate-400 py-4 text-center">No one else waiting</div>
+              <div v-else class="flex flex-wrap gap-2">
+                <div v-for="q in waitingQueue" :key="q.queueID"
+                  class="px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                  <span class="font-bold text-slate-700">#{{ q.queueNumber }}</span>
+                  <span class="text-slate-400 ml-1.5">{{ q.children.map(c => c.name).join(', ') || q.requestBy }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- STAT CARDS -->
-        <!--
-          NOTE: The Queue.Status field is a free-text string set by whatever
-          called PUT /api/Queue/{id}/status. The backend code we've seen only
-          ever sets "Waiting" (on create) and lets callers pass "In Progress" /
-          "Completed". There is no confirmed "Ready" or "Late" status coming
-          from the backend, so those buckets are NOT invented here — anything
-          that isn't Waiting / In Progress / Completed is grouped as "Other"
-          until the backend defines a real status enum.
-        -->
         <div class="grid grid-cols-4 gap-4 mb-6">
           <div v-for="stat in statCards" :key="stat.label" class="bg-white rounded-xl border border-slate-200 p-5">
             <div class="flex items-center justify-between mb-3">
@@ -43,66 +83,61 @@
 
         <div class="grid grid-cols-3 gap-6">
 
-          <!-- PENDING PATIENTS -->
+          <!-- PENDING VACCINATIONS TODAY -->
           <div class="col-span-2 bg-white rounded-xl border border-slate-200">
             <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
-                <h2 class="font-semibold text-slate-800">Pending Patients Today</h2>
-                <p class="text-xs text-slate-400 mt-0.5">Children still waiting or in progress today</p>
+                <h2 class="font-semibold text-slate-800">Pending Vaccinations Today</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Children scheduled for vaccination today and where they are</p>
               </div>
-              <button class="text-xs text-emerald-600 hover:underline font-medium" @click="$router.push('/healthcare/queue')">
-                Go to Queue →
+              <button class="text-xs text-emerald-600 hover:underline font-medium" @click="router.push('/healthcare/vaccination-records')">
+                View All Records →
               </button>
             </div>
 
-            <div v-if="loadingQueue" class="flex items-center justify-center py-12">
+            <div v-if="loadingPending" class="flex items-center justify-center py-12">
               <Loader2 class="w-5 h-5 animate-spin text-slate-400" />
               <span class="ml-2 text-sm text-slate-400">Loading...</span>
             </div>
 
-            <div v-else-if="pendingPatients.length === 0" class="flex flex-col items-center justify-center py-12 text-slate-400">
+            <div v-else-if="pendingToday.length === 0" class="flex flex-col items-center justify-center py-12 text-slate-400">
               <CheckCircle class="w-8 h-8 mb-2 opacity-40" />
-              <p class="text-sm">No pending patients right now</p>
+              <p class="text-sm">All vaccinations for today are done</p>
             </div>
 
             <div v-else class="overflow-x-auto">
               <table class="w-full text-sm">
                 <thead>
                   <tr class="text-xs text-slate-400 uppercase tracking-wide">
-                    <th class="px-5 py-3 text-left font-medium">Queue #</th>
                     <th class="px-5 py-3 text-left font-medium">Child</th>
-                    <th class="px-5 py-3 text-left font-medium">Requested By</th>
+                    <th class="px-5 py-3 text-left font-medium">Parent</th>
+                    <th class="px-5 py-3 text-left font-medium">Vaccine</th>
+                    <th class="px-5 py-3 text-left font-medium">Dose</th>
                     <th class="px-5 py-3 text-left font-medium">Status</th>
-                    <th class="px-5 py-3 text-left font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-50">
-                  <tr v-for="q in pendingPatients" :key="q.queueID" class="hover:bg-slate-50 transition-colors">
-                    <td class="px-5 py-3 font-medium text-slate-700">#{{ q.queueNumber }}</td>
+                  <tr v-for="item in pendingToday" :key="item.timelineId" class="hover:bg-slate-50 transition-colors">
                     <td class="px-5 py-3">
-                      <div class="flex flex-col gap-1">
-                        <div v-for="c in q.children" :key="c.childID" class="flex items-center gap-2">
-                          <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                            :style="{ backgroundColor: avatarColor(c.name) }">
-                            {{ initials(c.name) }}
-                          </div>
-                          <span class="font-medium text-slate-800">{{ c.name }}</span>
+                      <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                          :style="{ backgroundColor: avatarColor(item.childName) }">
+                          {{ initials(item.childName) }}
                         </div>
+                        <span class="font-medium text-slate-800">{{ item.childName }}</span>
                       </div>
                     </td>
-                    <td class="px-5 py-3 text-slate-500">{{ q.requestBy }}</td>
+                    <td class="px-5 py-3 text-slate-500">{{ item.parentName || '—' }}</td>
+                    <td class="px-5 py-3 text-slate-700">{{ item.vaccineName }}</td>
+                    <td class="px-5 py-3 text-slate-500">Dose {{ item.doseNumber }}</td>
                     <td class="px-5 py-3">
-                      <span class="text-xs px-2 py-1 rounded-full font-medium" :class="statusBadgeClass(q.status)">
-                        {{ q.status }}
-                      </span>
-                    </td>
-                    <td class="px-5 py-3">
-                      <button
-                        @click="$router.push('/healthcare/queue')"
-                        class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
-                      >
-                        Open in Queue
+                      <button v-if="whereIs(item.childId).mine" @click="openVisit(whereIs(item.childId).visit, item.childId)"
+                        class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                        Vaccinate
                       </button>
+                      <span v-else class="text-xs font-medium px-2.5 py-1 rounded-full" :class="whereIs(item.childId).tone">
+                        {{ whereIs(item.childId).label }}
+                      </span>
                     </td>
                   </tr>
                 </tbody>
@@ -118,7 +153,7 @@
               <h2 class="font-semibold text-slate-800 mb-3">Quick Actions</h2>
               <div class="space-y-2">
                 <button v-for="action in quickActions" :key="action.label"
-                  @click="$router.push(action.path)"
+                  @click="router.push(action.path)"
                   class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors text-left">
                   <component :is="action.icon" class="w-4 h-4 text-emerald-600 shrink-0" />
                   {{ action.label }}
@@ -127,23 +162,13 @@
             </div>
 
             <!-- VACCINATED TODAY -->
-            <!--
-              Sourced from GET /api/VaccinationRecords/all, filtered client-side to
-              VaccinationDate == today. NOTE: RecordVaccination() in
-              VaccinationRecordsController does not currently set a Status
-              field on the created record, so we cannot reliably filter by
-              Status == "Completed". We filter by date only.
-            -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 flex-1">
               <h2 class="font-semibold text-slate-800 mb-3">Vaccinated Today</h2>
-              <div v-if="loadingRecords" class="flex items-center justify-center py-6">
-                <Loader2 class="w-4 h-4 animate-spin text-slate-400" />
-              </div>
-              <div v-else-if="recentlyVaccinated.length === 0" class="text-sm text-slate-400 text-center py-4">
+              <div v-if="recentlyVaccinated.length === 0" class="text-sm text-slate-400 text-center py-4">
                 No vaccinations recorded yet today
               </div>
               <div v-else class="space-y-3">
-                <div v-for="rec in recentlyVaccinated" :key="rec.vaccinationRecordID" class="flex items-start gap-3">
+                <div v-for="rec in recentlyVaccinated" :key="rec.recordId" class="flex items-start gap-3">
                   <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5"
                     :style="{ backgroundColor: avatarColor(rec.childName) }">
                     {{ initials(rec.childName) }}
@@ -166,180 +191,150 @@
 </template>
 
 <script setup>
-import { getUser, getToken, logout as clearSession } from '@/utils/auth'
-import { ref, computed, onMounted } from 'vue'
+import { getUser } from '@/utils/auth'
+import HealthcareSidebar from './Components/HealthcareSidebar.vue'
+import HealthcareHeader from './Components/HealthcareHeader.vue'
+import { fetchMyStation, isAtMyStation } from './Components/station.js'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 import {
-  Users, Syringe, Loader2, CheckCircle,
-  Clock, AlertCircle, ListChecks
+  Users, Calendar, Syringe, FileText, Loader2, CheckCircle,
+  Clock, AlertCircle, TrendingUp, ListChecks,
 } from 'lucide-vue-next'
-import HealthcareSidebar from '../Healthcare/Components/HealtcareSidebar.vue'
-import HealthcareHeader from '../Healthcare/Components/HealthcareHeader.vue'
-
 
 const router = useRouter()
+const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
 
-// VITE_API_URL is the bare host (no /api) per the project's existing
-// convention — /api is appended here, not stored in the env var.
-const API_BASE = `${(import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')}/api`
+const worker = ref({ userId: '', fullName: '' })
 
-function authHeaders() {
-  return { Authorization: `Bearer ${getToken()}` }
-}
-
-// ─────────────────────────────────────────────────────────────
-// AUTH
-// SKIP_AUTH lets you test the page without a real login session.
-// Set to false (or delete the block) before shipping.
-// ─────────────────────────────────────────────────────────────
-const SKIP_AUTH = false
-
-const worker = ref({ userId: '', fullName: '', userType: '' })
+let pollHandle = null
 
 onMounted(() => {
-  const account = getUser()
+  const u = getUser()
+  if (!u) { router.push('/'); return }
+  worker.value = { userId: u.UserID, fullName: `${u.FirstName} ${u.LastName}` }
 
-if (!account && !SKIP_AUTH) {
-  router.push('/')
-  return
-}
-
-const u = account || { UserID: 'dev-test-user', FirstName: 'Test', LastName: 'Worker', UserType: 'Nurse' }
-
-  worker.value = {
-    userId:   u.UserID || u.userID,
-    fullName: `${u.FirstName || u.firstName} ${u.LastName || u.lastName}`.trim(),
-    userType: u.UserType || u.userType || u.role, // Doctor / Nurse / Midwife
-  }
-
-  fetchQueue()
+  fetchStats()
+  fetchPendingToday()
   fetchRecentlyVaccinated()
+  fetchQueue()
+  // The queue moves quickly; the rest refreshes with it every few polls.
+  let tick = 0
+  pollHandle = setInterval(() => {
+    fetchQueue()
+    if (++tick % 6 === 0) { fetchStats(); fetchPendingToday(); fetchRecentlyVaccinated() }
+  }, 5000)
 })
 
-function logout() {
-  clearSession()
-  router.push('/')
-}
-
-const quickActions = [
-  { label: 'Go to Queue',     path: '/healthcare/queue',    icon: ListChecks },
-  { label: 'Search Patients', path: '/healthcare/patients', icon: Users      },
-]
+onUnmounted(() => {
+  if (pollHandle) clearInterval(pollHandle)
+})
 
 // ─────────────────────────────────────────────────────────────
-// QUEUE (for stats + pending patients)
-// GET /api/Queue — no confirmed date filter param on the backend,
-// so "today" is filtered client-side against QueueDate.
+// QUEUE + MY STATION
+// GET /api/Queue/today — every visit today with the station/health worker
+// the Admission Staff assigned. A health worker only vaccinates the
+// patient sent to their own station.
 // ─────────────────────────────────────────────────────────────
-const allQueues    = ref([])
+const todaysQueue  = ref([])
+const myStation    = ref(null)
 const loadingQueue = ref(false)
-const loadError    = ref('')
-
-function isToday(dateStr) {
-  const d = new Date(dateStr)
-  const now = new Date()
-  return d.getFullYear() === now.getFullYear() &&
-         d.getMonth() === now.getMonth() &&
-         d.getDate() === now.getDate()
-}
 
 async function fetchQueue() {
-  loadingQueue.value = true
-  loadError.value = ''
+  loadingQueue.value = todaysQueue.value.length === 0
   try {
-    const res = await fetch(`${API_BASE}/Queue`, { headers: authHeaders() })
-    if (!res.ok) throw new Error(`Queue request failed (${res.status})`)
-    const data = await res.json()
-    allQueues.value = data.filter(q => isToday(q.queueDate ?? q.QueueDate))
+    const [q, station] = await Promise.all([axios.get(`${API}/api/Queue/today`), fetchMyStation()])
+    todaysQueue.value = q.data
+    myStation.value = station
   } catch (e) {
     console.error('fetchQueue:', e)
-    loadError.value = 'Could not load today\'s queue. Please refresh.'
   } finally {
     loadingQueue.value = false
   }
 }
 
-const todaysQueue = computed(() =>
-  allQueues.value.map(q => ({
-    queueID:     q.queueID ?? q.QueueID,
-    queueNumber: q.queueNumber ?? q.QueueNumber,
-    requestBy:   q.requestBy ?? q.RequestBy,
-    status:      q.status ?? q.Status,
-    queueDate:   q.queueDate ?? q.QueueDate,
-    children:    (q.children ?? q.Children ?? []).map(c => ({
-      childID: c.childID ?? c.ChildID,
-      name:    c.name ?? c.Name,
-    })),
-  }))
-)
+const myVisit = computed(() => todaysQueue.value.find(isAtMyStation) || null)
+const waitingQueue = computed(() => todaysQueue.value.filter(q => q.status === 'Waiting'))
 
-const statusCounts = computed(() => {
-  const counts = { waiting: 0, inProgress: 0, completed: 0, other: 0 }
-  for (const q of todaysQueue.value) {
-    const s = (q.status || '').toLowerCase()
-    if (s === 'waiting') counts.waiting++
-    else if (s === 'in progress') counts.inProgress++
-    else if (s === 'completed') counts.completed++
-    else counts.other++
-  }
-  return counts
-})
+function openVisit(visit, childId = null) {
+  const child = childId || visit.children[0]?.childID
+  router.push(`/healthcare/vaccination/${visit.queueID}?child=${child}`)
+}
 
-const statCards = computed(() => [
-  { label: 'Waiting',     value: statusCounts.value.waiting,    icon: Clock,       iconColor: 'text-amber-500'   },
-  { label: 'In Progress', value: statusCounts.value.inProgress, icon: Loader2,     iconColor: 'text-blue-400'    },
-  { label: 'Completed',   value: statusCounts.value.completed,  icon: CheckCircle, iconColor: 'text-emerald-500' },
-  { label: 'Other',       value: statusCounts.value.other,      icon: AlertCircle, iconColor: 'text-slate-400'   },
-])
-
-const pendingPatients = computed(() =>
-  todaysQueue.value.filter(q => (q.status || '').toLowerCase() !== 'completed')
-)
-
-function statusBadgeClass(status) {
-  const s = (status || '').toLowerCase()
-  if (s === 'waiting') return 'bg-amber-50 text-amber-700'
-  if (s === 'in progress') return 'bg-blue-50 text-blue-700'
-  if (s === 'completed') return 'bg-emerald-50 text-emerald-700'
-  return 'bg-slate-100 text-slate-500'
+// Where a child due today is right now — drives the Pending table's
+// status column and the "Vaccinate" shortcut for the child at my station.
+function whereIs(childId) {
+  const visit = todaysQueue.value.find(q =>
+    q.children.some(c => String(c.childID).toLowerCase() === String(childId).toLowerCase()))
+  if (!visit) return { label: 'Not checked in', tone: 'bg-slate-100 text-slate-500' }
+  if (isAtMyStation(visit)) return { mine: true, visit }
+  const s = (visit.status || '').toLowerCase().replace(/\s+/g, '')
+  if (s === 'completed') return { label: 'Visit completed', tone: 'bg-emerald-50 text-emerald-700' }
+  if (s === 'inprogress') return { label: `At ${visit.stationName || 'a station'}`, tone: 'bg-blue-50 text-blue-700' }
+  return { label: `Waiting · #${visit.queueNumber}`, tone: 'bg-amber-50 text-amber-700' }
 }
 
 // ─────────────────────────────────────────────────────────────
-// RECENTLY VACCINATED (today)
-// GET /api/VaccinationRecords/all — filtered client-side by
-// VaccinationDate == today (Status not set on create — see note).
+// NAVIGATION
+// ─────────────────────────────────────────────────────────────
+const quickActions = [
+  { label: 'Patient List',        path: '/healthcare/patients',            icon: Users    },
+  { label: 'View Calendar',       path: '/healthcare/calendar',            icon: Calendar },
+  { label: 'Vaccination Records', path: '/healthcare/vaccination-records', icon: Syringe  },
+  { label: 'Daily Report',        path: '/healthcare/reports',             icon: FileText },
+]
+
+// ─────────────────────────────────────────────────────────────
+// STATS — GET /api/VaccinationRecords/stats
+// ─────────────────────────────────────────────────────────────
+const stats = ref({ vaccinatedToday: 0, pendingToday: 0, missedTotal: 0, weeklyTotal: 0 })
+
+const statCards = computed(() => [
+  { label: 'Vaccinated Today',  value: stats.value.vaccinatedToday, icon: Syringe,     iconColor: 'text-emerald-500' },
+  { label: 'Pending Today',     value: stats.value.pendingToday,    icon: Clock,       iconColor: 'text-amber-500'   },
+  { label: 'Missed Follow-ups', value: stats.value.missedTotal,     icon: AlertCircle, iconColor: 'text-red-400'     },
+  { label: 'Weekly Total',      value: stats.value.weeklyTotal,     icon: TrendingUp,  iconColor: 'text-blue-400'    },
+])
+
+async function fetchStats() {
+  try {
+    const res = await axios.get(`${API}/api/VaccinationRecords/stats`)
+    stats.value = res.data
+  } catch (e) { console.error('fetchStats:', e) }
+}
+
+// ─────────────────────────────────────────────────────────────
+// PENDING VACCINATIONS TODAY — GET /api/VaccinationTimeline/due-today
+// ─────────────────────────────────────────────────────────────
+const pendingToday   = ref([])
+const loadingPending = ref(false)
+
+async function fetchPendingToday() {
+  loadingPending.value = pendingToday.value.length === 0
+  try {
+    const res = await axios.get(`${API}/api/VaccinationTimeline/due-today`)
+    pendingToday.value = res.data
+  } catch (e) { console.error('fetchPendingToday:', e) }
+  finally { loadingPending.value = false }
+}
+
+// ─────────────────────────────────────────────────────────────
+// VACCINATED TODAY — GET /api/VaccinationRecords/completed-today
 // ─────────────────────────────────────────────────────────────
 const recentlyVaccinated = ref([])
-const loadingRecords     = ref(false)
 
 async function fetchRecentlyVaccinated() {
-  loadingRecords.value = true
   try {
-    const res = await fetch(`${API_BASE}/VaccinationRecords/all`, { headers: authHeaders() })
-    if (!res.ok) throw new Error(`VaccinationRecords request failed (${res.status})`)
-    const data = await res.json()
-
-    recentlyVaccinated.value = data
-      .filter(r => isToday(r.vaccinationDate ?? r.VaccinationDate))
-      .map(r => ({
-        vaccinationRecordID: r.vaccinationRecordID ?? r.VaccinationRecordID,
-        childName: r.childName ?? r.ChildName ?? 'Unknown',
-        vaccineName: r.vaccineName ?? r.VaccineName ?? 'Unknown',
-        doseNumber: r.doseNumber ?? r.DoseNumber,
-        vaccinationDate: r.vaccinationDate ?? r.VaccinationDate,
-      }))
-      .sort((a, b) => new Date(b.vaccinationDate) - new Date(a.vaccinationDate))
-  } catch (e) {
-    console.error('fetchRecentlyVaccinated:', e)
-  } finally {
-    loadingRecords.value = false
-  }
+    const res = await axios.get(`${API}/api/VaccinationRecords/completed-today`)
+    recentlyVaccinated.value = res.data
+  } catch (e) { console.error('fetchRecentlyVaccinated:', e) }
 }
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────
-const AVATAR_COLORS = ['#4a7c59', '#6b7c45', '#8b5e3c', '#4a6fa5', '#7b4f8e', '#5a7a6b', '#8b6914']
+const AVATAR_COLORS = ['#4a7c59','#6b7c45','#8b5e3c','#4a6fa5','#7b4f8e','#5a7a6b','#8b6914']
 function avatarColor(name) {
   if (!name) return AVATAR_COLORS[0]
   return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]

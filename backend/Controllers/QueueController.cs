@@ -39,6 +39,7 @@ namespace AndroidWebAPI.Controllers
 
         // GET /api/Queue/board
         // Polled by the Doctor dashboard to show who's waiting / in progress.
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("board")]
         public async Task<IActionResult> GetBoard()
         {
@@ -72,6 +73,7 @@ namespace AndroidWebAPI.Controllers
 
         // PATCH /api/Queue/call-next
         // Doctor button: bring the next Waiting visit into a room.
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpPatch("call-next")]
         public async Task<IActionResult> CallNext([FromQuery] int? roomId)
         {
@@ -98,7 +100,12 @@ namespace AndroidWebAPI.Controllers
         }
 
         // PATCH /api/Queue/{queueId}/complete
-        // Doctor button: mark the current visit done (auto-calls the next one).
+        // Health worker's "Complete Visit": marks the visit done and frees
+        // the station so the Admission Staff can send the next patient.
+        // (It used to auto-pull the next Waiting visit into the same room;
+        // with staff assigning each patient to a station, that would put a
+        // child in front of a worker nobody sent them to.)
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpPatch("{queueId}/complete")]
         public async Task<IActionResult> Complete(Guid queueId)
         {
@@ -107,27 +114,68 @@ namespace AndroidWebAPI.Controllers
 
             entry.Status = "Completed";
             entry.UpdatedAt = DateTime.Now;
-            await _context.SaveChangesAsync();
 
-            // Auto-advance: call the next Waiting visit forward.
-            var stillInProgress = await _context.Queues
-                .AnyAsync(q => q.QueueDate >= TodayStart && q.QueueDate < TodayEnd && q.Status == "InProgress");
-            if (!stillInProgress)
+            if (entry.AssignedRoomID.HasValue)
             {
-                var next = await _context.Queues
-                    .Where(q => q.QueueDate >= TodayStart && q.QueueDate < TodayEnd && q.Status == "Waiting")
-                    .OrderBy(q => q.QueueNumber)
-                    .FirstOrDefaultAsync();
-                if (next != null)
+                var room = await _context.ClinicRooms.FindAsync(entry.AssignedRoomID.Value);
+                if (room != null)
                 {
-                    next.Status = "InProgress";
-                    next.AssignedRoomID = entry.AssignedRoomID;
-                    next.UpdatedAt = DateTime.Now;
-                    await _context.SaveChangesAsync();
+                    room.IsOccupied = false;
+                    room.CurrentChildID = null;
                 }
             }
 
-            return Ok(entry);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Visit completed.", queueID = entry.QueueID });
+        }
+
+        // Maps visits to the response DTO, filling in station + worker.
+        private async Task<List<QueueResponseDto>> ToDtosAsync(IEnumerable<Queue> queues)
+        {
+            var list = queues.ToList();
+
+            var roomIds = list.Where(q => q.AssignedRoomID.HasValue)
+                .Select(q => q.AssignedRoomID!.Value).Distinct().ToList();
+            var rooms = await _context.ClinicRooms
+                .Where(r => roomIds.Contains(r.RoomID))
+                .ToDictionaryAsync(r => r.RoomID);
+
+            var workerIds = rooms.Values.Where(r => r.AssignedDoctorID.HasValue)
+                .Select(r => r.AssignedDoctorID!.Value).Distinct().ToList();
+            var workers = await _context.Users
+                .Where(u => workerIds.Contains(u.UserID))
+                .ToDictionaryAsync(u => u.UserID);
+
+            return list.Select(q =>
+            {
+                ClinicRoom? room = null;
+                if (q.AssignedRoomID.HasValue) rooms.TryGetValue(q.AssignedRoomID.Value, out room);
+                User? worker = null;
+                if (room?.AssignedDoctorID != null) workers.TryGetValue(room.AssignedDoctorID.Value, out worker);
+
+                return new QueueResponseDto
+                {
+                    QueueID = q.QueueID,
+                    QueueNumber = q.QueueNumber,
+                    BarangayNo = q.Parent?.BarangayNo,
+                    RequestBy = $"{q.Parent?.FirstName} {q.Parent?.LastName}".Trim(),
+                    Status = q.Status,
+                    QueueDate = q.QueueDate,
+                    CheckedInAt = q.CreatedAt,
+                    AssignedRoomID = q.AssignedRoomID,
+                    StationName = room?.RoomNumber,
+                    AssignedWorkerID = worker?.UserID,
+                    AssignedWorkerName = worker != null ? $"{worker.FirstName} {worker.LastName}".Trim() : null,
+                    Children = q.QueueChildren
+                        .Select(qc => new QueueChildResponseDto
+                        {
+                            ChildID = qc.ChildID,
+                            Name = $"{qc.Child?.FirstName} {qc.Child?.LastName}".Trim()
+                        })
+                        .ToList()
+                };
+            }).ToList();
         }
 
         // GET: api/Queue/today
@@ -136,6 +184,7 @@ namespace AndroidWebAPI.Controllers
         // entry the clinic has ever had. Use this for "today's queue" views
         // (e.g. Staff Dashboard); use GetAll where full history is wanted
         // (e.g. Queue Management, Reports).
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("today")]
         public async Task<IActionResult> GetToday()
         {
@@ -146,55 +195,21 @@ namespace AndroidWebAPI.Controllers
                 .OrderBy(q => q.QueueNumber)
                 .ToListAsync();
 
-            var result = queues.Select(q => new QueueResponseDto
-            {
-                QueueID = q.QueueID,
-                QueueNumber = q.QueueNumber,
-                BarangayNo = q.Parent?.BarangayNo,
-                RequestBy = $"{q.Parent?.FirstName} {q.Parent?.LastName}".Trim(),
-                Status = q.Status,
-                QueueDate = q.QueueDate,
-
-                Children = q.QueueChildren
-                    .Select(qc => new QueueChildResponseDto
-                    {
-                        ChildID = qc.ChildID,
-                        Name = $"{qc.Child?.FirstName} {qc.Child?.LastName}".Trim()
-                    })
-                    .ToList()
-            }).ToList();
-
-            return Ok(result);
+            return Ok(await ToDtosAsync(queues));
         }
 
        // GET: api/Queue
+[Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
 [HttpGet]
 public async Task<IActionResult> GetAll()
 {
     var queues = await _queueRepository.GetAllAsync();
 
-    var result = queues.Select(q => new QueueResponseDto
-    {
-        QueueID = q.QueueID,
-        QueueNumber = q.QueueNumber,
-        BarangayNo = q.Parent?.BarangayNo,
-        RequestBy = $"{q.Parent?.FirstName} {q.Parent?.LastName}".Trim(),
-        Status = q.Status,
-        QueueDate = q.QueueDate,
-
-        Children = q.QueueChildren
-            .Select(qc => new QueueChildResponseDto
-            {
-                ChildID = qc.ChildID,
-                Name = $"{qc.Child?.FirstName} {qc.Child?.LastName}".Trim()
-            })
-            .ToList()
-    }).ToList();
-
-    return Ok(result);
+    return Ok(await ToDtosAsync(queues));
 }
 
         // GET: api/Queue/{id}
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(Guid id)
         {
@@ -203,31 +218,67 @@ public async Task<IActionResult> GetAll()
             if (queue == null)
                 return NotFound();
 
-            var result = new QueueResponseDto
-{
-    QueueID = queue.QueueID,
-    QueueNumber = queue.QueueNumber,
-    BarangayNo = queue.Parent?.BarangayNo,
-    RequestBy = $"{queue.Parent?.FirstName} {queue.Parent?.LastName}".Trim(),
-    Status = queue.Status,
-    QueueDate = queue.QueueDate,
+            return Ok((await ToDtosAsync(new[] { queue }))[0]);
+        }
 
-    Children = queue.QueueChildren
-        .Select(qc => new QueueChildResponseDto
+        // GET: api/Queue/my-status/{parentId}
+        // Parent dashboard "Priority Ticket": the parent's own queue number
+        // today, the number currently being served, and how many visits
+        // are still ahead of them. Always 200 — checkedIn=false when the
+        // parent hasn't checked in today.
+        [HttpGet("my-status/{parentId}")]
+        public async Task<IActionResult> GetMyStatus(Guid parentId)
         {
-            ChildID = qc.ChildID,
-            Name = $"{qc.Child?.FirstName} {qc.Child?.LastName}".Trim()
-        })
-        .ToList()
-};
+            if (!AndroidWebAPI.Services.AccessGuard.CanSeeParent(User, parentId)) return Forbid();
+            var todays = await _context.Queues
+                .Where(q => q.QueueDate >= TodayStart && q.QueueDate < TodayEnd)
+                .OrderBy(q => q.QueueNumber)
+                .ToListAsync();
 
-return Ok(result);
+            var mine = todays.FirstOrDefault(q => q.ParentID == parentId);
+            var serving = todays.FirstOrDefault(q => q.Status == "InProgress" || q.Status == "In Progress");
+
+            int? position = null;
+            if (mine != null && mine.Status == "Waiting")
+            {
+                position = todays.Count(q => q.Status == "Waiting" && q.QueueNumber < mine.QueueNumber) + 1;
+            }
+
+            // Where to go once the Admission Staff send them to a station
+            string? station = null, worker = null;
+            if (mine?.AssignedRoomID != null && mine.Status == "InProgress")
+            {
+                var room = await _context.ClinicRooms.FindAsync(mine.AssignedRoomID.Value);
+                station = room?.RoomNumber;
+                if (room?.AssignedDoctorID != null)
+                {
+                    var u = await _context.Users.FindAsync(room.AssignedDoctorID.Value);
+                    if (u != null) worker = $"{(u.Position == "Doctor" ? "Dr." : "Nurse")} {u.FirstName} {u.LastName}";
+                }
+            }
+
+            var childIds = mine == null
+                ? new List<Guid>()
+                : await _context.QueueChildren.Where(qc => qc.QueueID == mine.QueueID).Select(qc => qc.ChildID).ToListAsync();
+
+            return Ok(new
+            {
+                checkedIn = mine != null,
+                myQueueNumber = mine?.QueueNumber,
+                myStatus = mine?.Status,
+                nowServingNumber = serving?.QueueNumber,
+                positionInLine = position,
+                stationName = station,
+                workerName = worker,
+                childIDs = childIds,
+            });
         }
 
         // GET: api/Queue/parent/{parentId}
         [HttpGet("parent/{parentId}")]
         public async Task<IActionResult> GetParentQueue(Guid parentId)
         {
+            if (!AndroidWebAPI.Services.AccessGuard.CanSeeParent(User, parentId)) return Forbid();
             var queue = await _queueRepository.GetParentQueueAsync(
                 parentId,
                 DateTime.Today
@@ -239,37 +290,46 @@ return Ok(result);
                     message = "Parent does not have a queue entry for today."
                 });
 
-            var result = new QueueResponseDto
-{
-    QueueID = queue.QueueID,
-    QueueNumber = queue.QueueNumber,
-    BarangayNo = queue.Parent?.BarangayNo,
-    RequestBy = $"{queue.Parent?.FirstName} {queue.Parent?.LastName}".Trim(),
-    Status = queue.Status,
-    QueueDate = queue.QueueDate,
-
-    Children = queue.QueueChildren
-        .Select(qc => new QueueChildResponseDto
-        {
-            ChildID = qc.ChildID,
-            Name = $"{qc.Child?.FirstName} {qc.Child?.LastName}".Trim()
-        })
-        .ToList()
-};
-
-return Ok(result);
+            return Ok((await ToDtosAsync(new[] { queue }))[0]);
         }
 
         // POST: api/Queue
+        // Parents check in from the Check-in page (with today's clinic QR
+        // code when that's switched on); Admission Staff add walk-ins by hand.
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] CreateQueueRequest request)
+        public async Task<IActionResult> Create(
+            [FromBody] CreateQueueRequest request,
+            [FromServices] AndroidWebAPI.Services.IQueueQRCodeService qrService,
+            [FromServices] IQueueQRSettingRepository qrSettings)
         {
+            if (!AndroidWebAPI.Services.AccessGuard.CanSeeParent(User, request.ParentID) || User.IsInRole(AndroidWebAPI.Services.Roles.Healthcare)) return Forbid();
             if (request.ChildIDs == null || request.ChildIDs.Count == 0)
             {
                 return BadRequest(new
                 {
                     message = "At least one child must be selected."
                 });
+            }
+
+            // Every child must belong to this parent
+            var linkedChildren = await _context.ChildParentRelationships
+                .Where(r => r.ParentID == request.ParentID && r.Status == "Active")
+                .Select(r => r.ChildID)
+                .ToListAsync();
+            if (request.ChildIDs.Any(id => !linkedChildren.Contains(id)))
+            {
+                return BadRequest(new
+                {
+                    message = "One of the selected children isn't linked to this parent."
+                });
+            }
+
+            // A parent checking in from their own phone must scan today's QR
+            bool isParent = User.IsInRole("Parent");
+            if (isParent && (await qrSettings.GetAsync())?.IsEnabled == true)
+            {
+                var (ok, error) = await qrService.ValidateAsync(request.QrCode);
+                if (!ok) return BadRequest(new { message = error });
             }
 
             var today = DateTime.Today;
@@ -318,17 +378,22 @@ return Ok(result);
             var createdQueue =
                 await _queueRepository.CreateAsync(queue);
 
-            var result =
+            var saved =
                 await _queueRepository.GetByIdAsync(createdQueue.QueueID);
 
+            // Return the same DTO as every other endpoint here. Returning the
+            // raw entity serialized its navigation properties in a loop
+            // (Queue -> QueueChildren -> Queue ...) and threw AFTER the row
+            // was saved, so check-ins looked like they failed with a 500.
             return CreatedAtAction(
                 nameof(GetById),
                 new { id = createdQueue.QueueID },
-                result
+                (await ToDtosAsync(new[] { saved! }))[0]
             );
         }
 
         // PUT: api/Queue/{id}/status
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateStatus(
             Guid id,
@@ -339,8 +404,26 @@ return Ok(result);
             if (queue == null)
                 return NotFound();
 
+            // "In Progress" means "at a station with a health worker", so it
+            // can only be set by sending the visit to a station.
+            if (request.Status == "InProgress" && queue.Status != "InProgress" && queue.AssignedRoomID == null)
+            {
+                return BadRequest(new
+                {
+                    message = "To start a visit, send the patient to a station with Assign Station on the Dashboard."
+                });
+            }
+
             queue.Status = request.Status;
             queue.UpdatedAt = DateTime.Now;
+
+            // Leaving "In Progress" frees the station. Going back to Waiting
+            // also clears the assignment, so staff re-assign a station later.
+            if (request.Status != "InProgress" && queue.AssignedRoomID.HasValue)
+            {
+                await FreeRoomAsync(queue.AssignedRoomID.Value);
+                if (request.Status == "Waiting") queue.AssignedRoomID = null;
+            }
 
             await _queueRepository.UpdateAsync(queue);
 
@@ -350,28 +433,11 @@ return Ok(result);
             // (Parent -> Queues -> ... ) and throw *after* the update has
             // already been saved, surfacing as a 500 even though the write
             // succeeded.
-            var result = new QueueResponseDto
-            {
-                QueueID = queue.QueueID,
-                QueueNumber = queue.QueueNumber,
-                BarangayNo = queue.Parent?.BarangayNo,
-                RequestBy = $"{queue.Parent?.FirstName} {queue.Parent?.LastName}".Trim(),
-                Status = queue.Status,
-                QueueDate = queue.QueueDate,
-
-                Children = queue.QueueChildren
-                    .Select(qc => new QueueChildResponseDto
-                    {
-                        ChildID = qc.ChildID,
-                        Name = $"{qc.Child?.FirstName} {qc.Child?.LastName}".Trim()
-                    })
-                    .ToList()
-            };
-
-            return Ok(result);
+            return Ok((await ToDtosAsync(new[] { queue }))[0]);
         }
 
         // DELETE: api/Queue/{id}
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
@@ -380,9 +446,25 @@ return Ok(result);
             if (queue == null)
                 return NotFound();
 
+            if (queue.AssignedRoomID.HasValue && queue.Status == "InProgress")
+            {
+                await FreeRoomAsync(queue.AssignedRoomID.Value);
+                await _context.SaveChangesAsync();
+            }
+
             await _queueRepository.DeleteAsync(id);
 
             return NoContent();
+        }
+
+        private async Task FreeRoomAsync(int roomId)
+        {
+            var room = await _context.ClinicRooms.FindAsync(roomId);
+            if (room != null)
+            {
+                room.IsOccupied = false;
+                room.CurrentChildID = null;
+            }
         }
     }
 
@@ -396,6 +478,9 @@ return Ok(result);
 
         public List<Guid> ChildIDs { get; set; }
             = new List<Guid>();
+
+        // Today's check-in code from the clinic QR (parents only)
+        public string? QrCode { get; set; }
     }
 
     public class UpdateQueueStatusRequest

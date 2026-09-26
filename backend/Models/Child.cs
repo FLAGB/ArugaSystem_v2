@@ -22,6 +22,9 @@ namespace AndroidWebAPI.Models
         public string? HealthCenter { get; set; }
         public int? Barangay { get; set; }
 
+        // Family (household) number the health center files the family under
+        public string? FamilyNo { get; set; }
+
         public string? Sex { get; set; }
         public string? Allergies { get; set; }
 

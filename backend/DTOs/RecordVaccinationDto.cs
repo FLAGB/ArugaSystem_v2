@@ -17,11 +17,5 @@ namespace AndroidWebAPI.DTOs
         public Guid? AdministeredByUserID { get; set; }
 
         public string? NurseObservation { get; set; }
-
-        public string? DoctorDiagnosis { get; set; }
-
-        public Guid? DoctorDiagnosedByUserID { get; set; }
-
-        public DateTime? DoctorDiagnosedAt { get; set; }
     }
 }

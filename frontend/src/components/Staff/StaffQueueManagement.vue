@@ -97,7 +97,8 @@
                         class="text-[12px] font-medium rounded-full pl-2.5 pr-6 py-1 border-none outline-none cursor-pointer disabled:opacity-50"
                         :class="statusStyle[q.status] || 'bg-stone-100 text-stone-600'"
                       >
-                        <option v-for="s in availableStatuses" :key="s" :value="s">{{ statusLabel(s) }}</option>
+                        <!-- "In Progress" = at a station; that's set with Assign Station on the Dashboard -->
+                        <option v-for="s in availableStatuses" :key="s" :value="s" :disabled="s === 'InProgress' && q.status !== 'InProgress'">{{ statusLabel(s) }}</option>
                       </select>
                     </td>
                     <td class="px-5 py-3 text-right">
@@ -293,12 +294,10 @@ const changeStatus = async (q, newStatus) => {
     await axios.put(`${API_BASE}/Queue/${q.queueID}/status`, { status: newStatus });
   } catch (error) {
     console.error("Status update error:", error);
-    // The backend can throw *after* the write already succeeded (e.g. while
-    // building its response), so don't trust a failed request to mean the
-    // data didn't change — re-fetch from the server to see what's actually
-    // true, rather than blindly reverting to the pre-edit value.
+    // Re-fetch from the server to show what's actually saved, rather than
+    // blindly reverting to the pre-edit value.
     await loadQueues();
-    alert("The status update may not have gone through as expected — the list has been refreshed to show the current state. Please check and try again if needed.");
+    alert(error.response?.data?.message || "The status couldn't be changed. The list has been refreshed to show the current state.");
   } finally {
     updatingId.value = null;
   }

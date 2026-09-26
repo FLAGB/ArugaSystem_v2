@@ -21,7 +21,8 @@
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 flex flex-col md:flex-row justify-between items-center gap-6">
               <div>
                 <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Today's Priority Ticket</p>
-                <h2 v-if="queueStatus.checkedIn" class="text-4xl font-black text-slate-800">You are Queue <span class="text-emerald-500">#{{ String(queueStatus.myQueueNumber).padStart(3, '0') }}</span></h2>
+                <h2 v-if="queueStatus.checkedIn && queueStatus.myStatus === 'Completed'" class="text-2xl font-black text-slate-800">Visit completed <span class="text-emerald-500">#{{ String(queueStatus.myQueueNumber).padStart(3, '0') }}</span></h2>
+                <h2 v-else-if="queueStatus.checkedIn" class="text-4xl font-black text-slate-800">You are Queue <span class="text-emerald-500">#{{ String(queueStatus.myQueueNumber).padStart(3, '0') }}</span></h2>
                 <h2 v-else class="text-2xl font-black text-slate-800">Not checked in today</h2>
                 <p class="text-sm font-bold text-slate-500 mt-1">Active for {{ selectedChild ? `${selectedChild.firstName} ${selectedChild.lastName}` : 'Select a child' }}</p>
               </div>
@@ -41,7 +42,7 @@
                 </div>
                 <div class="ml-auto text-right hidden sm:block">
                   <p class="text-[10px] text-white/60 font-black uppercase">Patient ID</p>
-                  <p class="text-white font-mono text-xs font-bold">#{{ selectedChild.childID.substring(0, 8).toUpperCase() }}</p>
+                  <p class="text-white font-mono text-xs font-bold">#{{ selectedChild.childID.slice(-8).toUpperCase() }}</p>
                 </div>
               </div>
               <div class="grid grid-cols-2 sm:grid-cols-3 divide-x divide-y divide-slate-50">
@@ -101,6 +102,7 @@ import NotificationPanel from '../Components/Notificationpanel.vue'
 
 import { getAccount, logout as authLogout } from '@/utils/auth'
 import api from '../Composables/api.js'
+import { fetchChildSchedule, buildSchedule } from '../Composables/childSchedule.js'
 
 const router = useRouter()
 
@@ -121,88 +123,30 @@ const selectedChild = ref(null)
 
 
 // =====================================================
-// VACCINATION (client-side DOH cascade — see Scheduled.vue /
-// Checkin.vue for the same logic; kept in sync across pages so
+// VACCINATION SCHEDULE (shared with Schedule / Records /
+// Check-in via Composables/childSchedule.js, so
 // "upcoming doses" always means the same thing everywhere)
 // =====================================================
 
 const completedRecords = ref([])
 const timelineLoading = ref(false)
 
-const VACCINE_MASTER = [
-  { vaccineId: 1, name: 'BCG Vaccine',                      doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 2, name: 'Hepatitis B Vaccine',              doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 3, name: 'Pentavalent (DPT-Hep B-HIB)',      doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 4, name: 'Oral Polio Vaccine (OPV)',         doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 5, name: 'Inactivated Polio Vaccine (IPV)',  doses: [{ n: 1, gap: 105 }, { n: 2, gap: 165}] },
-  { vaccineId: 6, name: 'Pneumococcal Conj. Vaccine (PCV)', doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 7, name: 'MMR Vaccine',                      doses: [{ n: 1, gap: 270 }, { n: 2, gap: 90 }] },
-]
+// Schedule comes from the backend timeline (see Composables/childSchedule.js).
+const scheduleTimeline = ref([])
 
-function snapToClinicDay(date) {
-  let d = new Date(date)
-  while (!(isMonday(d) || isWednesday(d) || isFriday(d))) d = addDays(d, 1)
-  return d
-}
-
-const computedVaccineList = computed(() => {
-  if (!selectedChild.value?.birthDate) return []
-  const birth = new Date(selectedChild.value.birthDate)
-  const result = []
-
-  for (const vaccine of VACCINE_MASTER) {
-    let prevActualDate = null
-    let prevOriginalDate = null
-
-    for (const dose of vaccine.doses) {
-      const record = completedRecords.value.find(r =>
-        Number(r.vaccineID ?? r.vaccineId) === vaccine.vaccineId &&
-        Number(r.doseNumber ?? r.DoseNumber) === dose.n &&
-        r.status === 'Completed' &&
-        r.dateAdministered
-      )
-
-      const originalDueDate = dose.n === 1
-        ? snapToClinicDay(addDays(birth, dose.gap))
-        : snapToClinicDay(addDays(prevOriginalDate ?? birth, dose.gap))
-
-      let scheduledDate
-      if (record) {
-        scheduledDate = new Date(record.dateAdministered)
-      } else if (dose.n === 1) {
-        scheduledDate = snapToClinicDay(addDays(birth, dose.gap))
-      } else {
-        const base = prevActualDate ?? prevOriginalDate ?? birth
-        scheduledDate = snapToClinicDay(addDays(base, dose.gap))
-      }
-
-      const administeredDate = record ? new Date(record.dateAdministered) : null
-
-      prevOriginalDate = originalDueDate
-      prevActualDate = administeredDate ?? null
-
-      result.push({
-        doseId: `${vaccine.vaccineId}-${dose.n}`,
-        vaccineId: vaccine.vaccineId,
-        name: vaccine.name,
-        doseNumber: dose.n,
-        scheduledDate,
-        isCompleted: !!record,
-      })
-    }
-  }
-  return result
-})
+const computedVaccineList = computed(() => buildSchedule(scheduleTimeline.value, completedRecords.value))
 
 async function fetchCompletedRecords(childId) {
-  if (!childId) { completedRecords.value = []; return }
+  if (!childId) { completedRecords.value = []; scheduleTimeline.value = []; return }
   timelineLoading.value = true
   try {
-    const response = await api.get(`/VaccinationRecords/child/${childId}`)
-    completedRecords.value = response.data ?? []
+    const { timeline, records } = await fetchChildSchedule(childId)
+    scheduleTimeline.value = timeline
+    completedRecords.value = records
   } catch (error) {
-    console.error('Failed to load vaccination records:', error)
+    console.error('Failed to load vaccination schedule:', error)
     completedRecords.value = []
+    scheduleTimeline.value = []
   } finally {
     timelineLoading.value = false
   }

@@ -1,424 +1,526 @@
+<!--
+  HealthcareVaccination.vue — the vaccination visit screen.
+  Reached from Queue → "Start Vaccinating":
+    /healthcare/vaccination/:queueId?child=<childID>
+
+  Shows the child's doses that are due or overdue (from the vaccination
+  timeline), lets the worker record one or several of them in the same
+  visit, and shows the next dose date the backend's recalculation engine
+  assigned. "Complete Visit" closes the queue entry.
+-->
 <template>
   <div class="flex h-screen bg-slate-50 font-sans antialiased text-slate-900">
-
-    <HealthcareSidebar @logout="logout" />
+    <HealthcareSidebar />
 
     <div class="flex flex-col flex-1 overflow-hidden">
-      <HealthcareHeader :worker="worker" title="Record Vaccination" />
+      <HealthcareHeader title="Vaccination Visit" />
 
       <main class="flex-1 overflow-y-auto p-6">
-
-        <!-- BACK -->
-        <button
-          @click="router.push('/healthcare/queue')"
-          class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-4 transition-colors"
-        >
+        <button @click="router.push('/healthcare/queue')"
+          class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 mb-4 transition-colors">
           <ArrowLeft class="w-4 h-4" /> Back to Queue
         </button>
 
-        <!-- LOAD ERROR (missing/invalid child, child fetch failed) -->
-        <div v-if="loadError" class="mb-4 flex items-start gap-2 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+        <div v-if="loadError" class="flex items-start gap-2 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
           <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
           <span>{{ loadError }}</span>
         </div>
 
-        <!-- LOADING CHILD -->
-        <div v-if="loadingChild" class="flex items-center justify-center py-20">
+        <div v-else-if="loading" class="flex items-center justify-center py-20">
           <Loader2 class="w-5 h-5 animate-spin text-slate-400" />
           <span class="ml-2 text-sm text-slate-400">Loading patient...</span>
         </div>
 
-        <!-- FORM -->
-        <div v-else-if="child" class="max-w-xl">
-          <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <div v-else-if="child" class="grid grid-cols-3 gap-6">
 
-            <div class="bg-emerald-600 px-6 py-5 flex items-center justify-between">
-              <div>
-                <p class="text-white font-bold leading-tight">Record Vaccination</p>
-                <p class="text-emerald-200 text-xs mt-0.5">{{ child.name }} · Queue #{{ queueNumber || queueId }}</p>
-              </div>
-            </div>
+          <!-- LEFT: patient + doses -->
+          <div class="col-span-2 space-y-5">
 
-            <div class="p-6 space-y-4">
-
-              <!-- Patient summary -->
-              <div class="bg-slate-50 rounded-xl p-4 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+            <!-- Patient card -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold text-white shrink-0"
                   :style="{ backgroundColor: avatarColor(child.name) }">
                   {{ initials(child.name) }}
                 </div>
-                <div>
-                  <p class="font-semibold text-slate-800">{{ child.name }}</p>
-                  <p class="text-xs text-slate-500">
-                    {{ child.ageLabel || '—' }} · {{ child.sex || '—' }}
-                    <span v-if="child.parentName"> · Parent: {{ child.parentName }}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-lg font-bold text-slate-800">{{ child.name }}</p>
+                  <p class="text-sm text-slate-500">
+                    {{ child.sex || '—' }} · {{ child.ageLabel }} · Born {{ formatDate(child.birthDate) }}
                   </p>
+                  <p class="text-xs text-slate-400 mt-0.5">Parent / Guardian: {{ child.parentName || '—' }}</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Queue</p>
+                  <p class="text-2xl font-black text-slate-800">#{{ queueNumber || '—' }}</p>
                 </div>
               </div>
 
-              <!-- VACCINE selector -->
-              <div>
-                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">
-                  Vaccine <span class="text-red-400">*</span>
-                </label>
-                <div v-if="loadingVaccines" class="text-xs text-slate-400 py-2">Loading vaccines...</div>
-                <select v-else v-model="vaccinateForm.vaccineId"
-                  @change="vaccinateForm.doseNumber = ''; fetchInventoryFor(vaccinateForm.vaccineId)"
-                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                  <option value="">Select a vaccine...</option>
-                  <option v-for="v in vaccineList" :key="v.vaccineID" :value="v.vaccineID">
-                    {{ v.vaccineName }}
-                  </option>
-                </select>
+              <div v-if="child.allergies" class="mt-4 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg">
+                <AlertTriangle class="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <p class="text-sm text-red-700"><span class="font-semibold">Allergies:</span> {{ child.allergies }}</p>
               </div>
 
-              <!-- DOSE NUMBER selector -->
-              <div>
-                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">
-                  Dose Number <span class="text-red-400">*</span>
-                </label>
-                <select v-model="vaccinateForm.doseNumber"
-                  :disabled="!vaccinateForm.vaccineId"
-                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                  <option value="">Select dose...</option>
-                  <option v-for="d in selectedVaccineDoses" :key="d.doseNumber" :value="d.doseNumber">
-                    Dose {{ d.doseNumber }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">
-                  Date Administered <span class="text-red-400">*</span>
-                </label>
-                <input type="date" v-model="vaccinateForm.dateAdministered"
-                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-              </div>
-
-              <div>
-                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">
-                  Vaccine Batch <span class="text-red-400">*</span>
-                </label>
-                <select v-model="vaccinateForm.inventoryId"
-                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                  <option value="" disabled>{{ loadingInventory ? 'Loading batches...' : 'Select a batch...' }}</option>
-                  <option v-for="inv in inventoryOptions" :key="inv.inventoryId" :value="inv.inventoryId">
-                    {{ inv.lotNumber }} — exp {{ new Date(inv.expirationDate).toLocaleDateString() }} ({{ inv.currentQuantity }} left)
-                  </option>
-                </select>
-                <p v-if="!loadingInventory && !vaccinateForm.vaccineId" class="text-xs text-slate-400 mt-1">Select a vaccine first.</p>
-                <p v-else-if="!loadingInventory && vaccinateForm.vaccineId && inventoryOptions.length === 0" class="text-xs text-red-500 mt-1">No usable stock for this vaccine — check inventory.</p>
-              </div>
-
-              <div>
-                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">
-                  Remarks / Adverse Reactions
-                </label>
-                <textarea v-model="vaccinateForm.remarks" rows="2"
-                  placeholder="e.g. No adverse reaction"
-                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none">
-                </textarea>
-              </div>
-
-              <!-- Accountability notice -->
-              <div class="flex items-start gap-2 p-3 bg-amber-50 rounded-lg border border-amber-100">
-                <Info class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <p class="text-xs text-amber-700">
-                  This will be permanently saved under <strong>{{ worker.fullName }}</strong>
-                  and visible to the parent.
-                </p>
-              </div>
-
-              <!-- SUBMIT ERROR -->
-              <div v-if="submitError" class="flex items-start gap-2 p-3 bg-red-50 rounded-lg border border-red-100">
-                <AlertCircle class="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                <p class="text-xs text-red-700">{{ submitError }}</p>
+              <div v-if="!atMyStation" class="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                <AlertCircle class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p class="text-sm text-amber-800">{{ stationNotice }}</p>
               </div>
             </div>
 
-            <div class="px-6 pb-6 flex gap-3">
+            <!-- Due / overdue doses -->
+            <div class="bg-white rounded-xl border border-slate-200">
+              <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h2 class="font-semibold text-slate-800">Vaccines Due This Visit</h2>
+                  <p class="text-xs text-slate-400 mt-0.5">Due today or overdue, from the child's vaccination schedule</p>
+                </div>
+                <button @click="openManual" :disabled="!atMyStation"
+                  class="disabled:opacity-40 disabled:cursor-not-allowed text-xs border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                  + Other vaccine
+                </button>
+              </div>
+
+              <div v-if="dueDoses.length === 0 && givenThisVisit.length === 0" class="px-5 py-10 text-center text-sm text-slate-400">
+                No doses are due for this child today.
+                <span v-if="nextUpcoming">Next: <strong class="text-slate-600">{{ nextUpcoming.vaccineName }} Dose {{ nextUpcoming.doseNumber }}</strong> on {{ formatDate(nextUpcoming.scheduledDate) }}.</span>
+              </div>
+
+              <div class="divide-y divide-slate-50">
+                <!-- Recorded during this visit -->
+                <div v-for="g in givenThisVisit" :key="'g' + g.key" class="px-5 py-3.5 flex items-center justify-between bg-emerald-50/40">
+                  <div class="flex items-center gap-3">
+                    <CheckCircle class="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <p class="text-sm font-medium text-slate-800">{{ g.vaccineName }} — Dose {{ g.doseNumber }}</p>
+                      <p class="text-xs text-slate-500">Batch {{ g.lotNumber }}<span v-if="g.nextLabel"> · Next dose: <strong class="text-emerald-700">{{ g.nextLabel }}</strong></span></p>
+                    </div>
+                  </div>
+                  <span class="text-xs font-semibold text-emerald-700">Recorded</span>
+                </div>
+
+                <!-- Still to give -->
+                <div v-for="d in dueDoses" :key="d.timelineID" class="px-5 py-3.5 flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-slate-800">{{ d.vaccineName }} — Dose {{ d.doseNumber }}</p>
+                    <p class="text-xs" :class="isOverdue(d) ? 'text-red-500 font-medium' : 'text-slate-400'">
+                      {{ isOverdue(d) ? `Overdue — was due ${formatDate(d.scheduledDate)}` : 'Due today' }}
+                    </p>
+                  </div>
+                  <button @click="openRecord(d)" :disabled="!atMyStation"
+                    class="disabled:opacity-40 disabled:cursor-not-allowed text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5">
+                    <Syringe class="w-3.5 h-3.5" /> Record Dose
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Visit actions -->
+            <div class="flex items-center justify-end gap-3">
               <button @click="router.push('/healthcare/queue')"
-                class="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                Cancel
+                class="px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                Save &amp; Return to Queue
               </button>
-              <button @click="submitVaccination"
-                :disabled="submitting || !vaccinateForm.vaccineId || !vaccinateForm.doseNumber || !vaccinateForm.dateAdministered || !vaccinateForm.inventoryId"
-                class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
-                <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
-                <CheckCircle v-else class="w-4 h-4" />
-                {{ submitting ? 'Saving...' : 'Confirm & Save' }}
+              <button @click="completeVisit" :disabled="completing || !atMyStation"
+                class="px-5 py-2.5 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition-colors flex items-center gap-2">
+                <Loader2 v-if="completing" class="w-4 h-4 animate-spin" />
+                <Check v-else class="w-4 h-4" />
+                Complete Visit
               </button>
             </div>
           </div>
-        </div>
 
+          <!-- RIGHT: history -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5 h-fit">
+            <h2 class="font-semibold text-slate-800 mb-1">Immunization History</h2>
+            <p class="text-xs text-slate-400 mb-4">Check remarks for past adverse reactions</p>
+            <div v-if="history.length === 0" class="text-sm text-slate-400 text-center py-6">No doses recorded yet</div>
+            <div v-else class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div v-for="h in history" :key="h.vaccinationRecordID" class="border-l-2 pl-3"
+                :class="hasReaction(h) ? 'border-amber-400' : 'border-emerald-300'">
+                <p class="text-sm font-medium text-slate-800">{{ h.vaccineName }} — Dose {{ h.doseNumber }}</p>
+                <p class="text-xs text-slate-400">{{ formatDate(h.vaccinationDate) }}<span v-if="h.administeredByName"> · {{ h.administeredByName }}</span></p>
+                <p v-if="h.nurseObservation" class="text-xs mt-0.5" :class="hasReaction(h) ? 'text-amber-700' : 'text-slate-500'">{{ h.nurseObservation }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
 
+    <!-- RECORD DOSE MODAL -->
+    <Transition name="fade">
+      <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeModal"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 z-10">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h3 class="text-lg font-bold text-slate-800">Record Vaccination</h3>
+              <p class="text-sm text-slate-400 mt-0.5">{{ child?.name }}</p>
+            </div>
+            <button @click="closeModal" class="text-slate-400 hover:text-slate-600"><X class="w-5 h-5" /></button>
+          </div>
+
+          <div class="space-y-4">
+            <template v-if="form.manual">
+              <div>
+                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">Vaccine <span class="text-red-400">*</span></label>
+                <select v-model="form.vaccineId" @change="onManualVaccineChange"
+                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="" disabled>Select a vaccine...</option>
+                  <option v-for="v in vaccineList" :key="v.vaccineID" :value="v.vaccineID">{{ v.vaccineName }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">Dose <span class="text-red-400">*</span></label>
+                <select v-model="form.doseNumber"
+                  class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="" disabled>Select dose...</option>
+                  <option v-for="d in manualDoses" :key="d" :value="d">Dose {{ d }}</option>
+                </select>
+              </div>
+            </template>
+            <div v-else class="bg-slate-50 rounded-xl p-3">
+              <p class="text-sm font-semibold text-slate-800">{{ form.vaccineName }} — Dose {{ form.doseNumber }}</p>
+            </div>
+
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">Date Administered <span class="text-red-400">*</span></label>
+              <input type="date" v-model="form.date" :max="todayISO"
+                class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">Vaccine Batch <span class="text-red-400">*</span></label>
+              <select v-model="form.inventoryId"
+                class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value="" disabled>{{ loadingInventory ? 'Loading batches...' : 'Select a batch...' }}</option>
+                <option v-for="inv in inventoryOptions" :key="inv.inventoryId" :value="inv.inventoryId">
+                  {{ inv.lotNumber }} — exp {{ formatDate(inv.expirationDate) }} ({{ inv.currentQuantity }} left)
+                </option>
+              </select>
+              <p v-if="!loadingInventory && form.vaccineId && inventoryOptions.length === 0" class="text-xs text-red-500 mt-1">
+                No usable stock for this vaccine — the parent should be advised to return on another date.
+              </p>
+              <p v-else class="text-xs text-slate-400 mt-1">Earliest-expiring batch is selected first.</p>
+            </div>
+
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide block mb-1.5">Remarks / Adverse Reactions</label>
+              <textarea v-model="form.remarks" rows="3" placeholder="e.g. No adverse reaction observed"
+                class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
+            </div>
+
+            <p v-if="submitError" class="text-xs text-red-500">{{ submitError }}</p>
+          </div>
+
+          <div class="flex items-start gap-2 mt-4 p-3 bg-amber-50 rounded-lg border border-amber-100">
+            <Info class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <p class="text-xs text-amber-700">
+              Saved under <strong>{{ workerName }}</strong> and visible to the child's parent. The next dose date is recalculated automatically from today's date.
+            </p>
+          </div>
+
+          <div class="flex gap-3 mt-5">
+            <button @click="closeModal" class="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+            <button @click="submitDose" :disabled="!canSubmit || submitting"
+              class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
+              <CheckCircle v-else class="w-4 h-4" />
+              {{ submitting ? 'Saving...' : 'Confirm & Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- TOAST -->
     <Transition name="fade">
-      <div v-if="toast.show"
-        class="fixed bottom-6 right-6 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg z-50">
-        {{ toast.message }}
+      <div v-if="toast" class="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-5 py-3.5 rounded-xl shadow-lg flex items-center gap-3 text-sm font-medium">
+        <CheckCircle class="w-5 h-5" /> {{ toast }}
       </div>
     </Transition>
   </div>
 </template>
 
 <script setup>
-import { getUser, getToken, logout as clearSession } from '@/utils/auth'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ArrowLeft, AlertCircle, Loader2, CheckCircle, Info } from 'lucide-vue-next'
-import HealthcareSidebar from '@/components/Healthcare/Components/HealtcareSidebar.vue'
-import HealthcareHeader from '@/components/Healthcare/Components/HealthcareHeader.vue'
+import axios from 'axios'
+import {
+  ArrowLeft, AlertCircle, AlertTriangle, Loader2, CheckCircle, Check, Info, Syringe, X,
+} from 'lucide-vue-next'
+import { getUser } from '@/utils/auth'
+import HealthcareSidebar from './Components/HealthcareSidebar.vue'
+import HealthcareHeader from './Components/HealthcareHeader.vue'
+import { isAtMyStation } from './Components/station.js'
 
 const router = useRouter()
 const route  = useRoute()
+const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
 
-// VITE_API_URL is the bare host (no /api) per the project's existing
-// convention — /api is appended here, not stored in the env var.
-const API_BASE = `${(import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')}/api`
+const queueId = computed(() => route.params.queueId)
+const childId = computed(() => route.query.child)
 
-function authHeaders(json = false) {
-  const h = { Authorization: `Bearer ${getToken()}` }
-  if (json) h['Content-Type'] = 'application/json'
-  return h
-}
+const user = getUser() || {}
+const workerName = `${user.FirstName || ''} ${user.LastName || ''}`.trim()
+const todayISO = toISODate(new Date())
 
-// ─────────────────────────────────────────────────────────────
-// AUTH — same pattern as HealthcareQueue.vue / HealthcarePatient.vue
-// ─────────────────────────────────────────────────────────────
-const SKIP_AUTH = false
-const worker = ref({ userId: '', fullName: '', userType: '' })
+const loading     = ref(true)
+const loadError   = ref('')
+const child       = ref(null)
+const queueNumber = ref('')
+const visit = ref(null)
 
-onMounted(() => {
-  const account = getUser()
+// Only the health worker at the station the Admission Staff sent this
+// visit to can record doses (the backend enforces the same rule).
+const atMyStation = computed(() => isAtMyStation(visit.value))
+const stationNotice = computed(() => {
+  const v = visit.value
+  if (!v) return 'This visit could not be found in today’s queue.'
+  const s = (v.status || '').toLowerCase()
+  if (s === 'completed') return 'This visit is already completed.'
+  if (!v.assignedRoomID) return 'This patient hasn’t been sent to a station yet. The Admission Staff must assign them to your station before you can record vaccinations.'
+  return `This patient is at ${v.stationName} with ${v.assignedWorkerName || 'another health worker'}. Only they can record this visit.`
+})
+const timeline    = ref([])
+const history     = ref([])
+const vaccineList = ref([])
+const givenThisVisit = ref([])
 
-  if (!account && !SKIP_AUTH) {
-    router.push('/')
-    return
-  }
-
-  const u = account || { UserID: 'dev-test-user', FirstName: 'Test', LastName: 'Worker', UserType: 'Nurse' }
-
-  worker.value = {
-    userId:   u.UserID || u.userID,
-    fullName: `${u.FirstName || u.firstName} ${u.LastName || u.lastName}`.trim(),
-    userType: u.UserType || u.userType || u.role,
-  }
-
+onMounted(async () => {
   if (!queueId.value || !childId.value) {
     loadError.value = 'Missing queue or patient reference — go back to the Queue and start vaccinating from there.'
-    loadingChild.value = false
+    loading.value = false
     return
   }
-
-  fetchChild()
-  fetchVaccines()
-})
-
-function logout() {
-  clearSession()
-  router.push('/')
-}
-
-// ─────────────────────────────────────────────────────────────
-// ROUTE PARAMS — /healthcare/vaccination/:queueId?child=<childID>
-// ─────────────────────────────────────────────────────────────
-const queueId     = computed(() => route.params.queueId)
-const childId     = computed(() => route.query.child)
-const queueNumber = ref('')
-
-// ─────────────────────────────────────────────────────────────
-// CHILD — GET /api/Children/{childID}, confirmed real endpoint
-// (parentName isn't on this payload yet — GET /api/Children/all
-// still needs the parentName join fixed; shown only if present)
-// ─────────────────────────────────────────────────────────────
-const child        = ref(null)
-const loadingChild  = ref(true)
-const loadError     = ref('')
-
-function ageLabelFromDOB(dobStr) {
-  const dob = new Date(dobStr)
-  if (isNaN(dob)) return null
-  const now = new Date()
-  let months = (now.getFullYear() - dob.getFullYear()) * 12 + (now.getMonth() - dob.getMonth())
-  if (now.getDate() < dob.getDate()) months--
-  if (months < 0) return null
-  if (months < 24) return `${months} month${months === 1 ? '' : 's'}`
-  const years = Math.floor(months / 12)
-  return `${years} yr${years === 1 ? '' : 's'}`
-}
-
-async function fetchChild() {
-  loadingChild.value = true
-  loadError.value = ''
   try {
-    const res = await fetch(`${API_BASE}/Children/${childId.value}`, { headers: authHeaders() })
-    if (!res.ok) throw new Error(`Children request failed (${res.status})`)
-    const c = await res.json()
-    const dob = c.birthDate ?? c.BirthDate ?? null
+    const [childRes, queueRes] = await Promise.all([
+      axios.get(`${API}/api/Children/${childId.value}`),
+      axios.get(`${API}/api/Queue/${queueId.value}`).catch(() => null),
+    ])
+    const c = childRes.data
     child.value = {
-      childID:    c.childID ?? c.ChildID,
-      name:       `${c.firstName ?? c.FirstName ?? ''} ${c.lastName ?? c.LastName ?? ''}`.trim(),
-      sex:        c.sex ?? c.Sex ?? null,
-      dateOfBirth: dob,
-      ageLabel:   dob ? ageLabelFromDOB(dob) : null,
-      parentName: c.parentName ?? c.ParentName ?? null,
+      childID: c.childID,
+      name: `${c.firstName} ${c.lastName}`.trim(),
+      sex: c.sex,
+      birthDate: c.birthDate,
+      ageLabel: ageLabel(c.birthDate),
+      parentName: c.parentName,
+      allergies: c.allergies && !/^(none|n\/a|none known)$/i.test(c.allergies.trim()) ? c.allergies : null,
     }
+    queueNumber.value = queueRes?.data?.queueNumber ?? ''
+    visit.value = queueRes?.data ?? null
+    await Promise.all([loadTimeline(), loadHistory(), loadVaccines()])
   } catch (e) {
-    console.error('fetchChild:', e)
+    console.error('load visit:', e)
     loadError.value = 'Could not load this patient. Go back to the Queue and try again.'
   } finally {
-    loadingChild.value = false
+    loading.value = false
   }
-}
-
-// ─────────────────────────────────────────────────────────────
-// VACCINE LIST — same as DoctorPatients.vue's Record Vaccination modal
-// vaccineList shape: [{ vaccineID, vaccineName, doses: [{ doseNumber, minIntervalDays }] }]
-// ─────────────────────────────────────────────────────────────
-const vaccineList     = ref([])
-const loadingVaccines = ref(false)
-
-async function fetchVaccines() {
-  loadingVaccines.value = true
-  try {
-    const res = await fetch(`${API_BASE}/Vaccines/with-doses`, { headers: authHeaders() })
-    if (!res.ok) throw new Error(`Vaccines request failed (${res.status})`)
-    vaccineList.value = await res.json()
-  } catch (err) {
-    console.error('fetchVaccines error:', err)
-    vaccineList.value = []
-  } finally {
-    loadingVaccines.value = false
-  }
-}
-
-const selectedVaccineDoses = computed(() => {
-  if (!vaccinateForm.value.vaccineId) return []
-  const match = vaccineList.value.find(v => v.vaccineID === vaccinateForm.value.vaccineId)
-  return match ? match.doses : []
 })
 
+async function loadTimeline() {
+  const res = await axios.get(`${API}/api/VaccinationTimeline/child/${childId.value}`)
+  timeline.value = res.data
+}
+
+async function loadHistory() {
+  const res = await axios.get(`${API}/api/VaccinationRecords/child/${childId.value}`)
+  history.value = [...res.data]
+    .filter(r => (r.status ?? 'Completed') === 'Completed')
+    .sort((a, b) => new Date(b.vaccinationDate) - new Date(a.vaccinationDate))
+}
+
+async function loadVaccines() {
+  const res = await axios.get(`${API}/api/Vaccines/with-doses`)
+  vaccineList.value = res.data
+}
+
+// Due today or earlier and not yet given.
+const dueDoses = computed(() =>
+  timeline.value
+    .filter(t => (t.status === 'Pending' || t.status === 'Missed') && dateOnly(t.scheduledDate) <= todayISO)
+    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate))
+)
+
+const nextUpcoming = computed(() =>
+  timeline.value
+    .filter(t => t.status === 'Pending' && dateOnly(t.scheduledDate) > todayISO)
+    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate))[0] || null
+)
+
+function isOverdue(t) { return dateOnly(t.scheduledDate) < todayISO }
+
 // ─────────────────────────────────────────────────────────────
-// FORM
+// RECORD DOSE
 // ─────────────────────────────────────────────────────────────
+const showModal   = ref(false)
 const submitting  = ref(false)
 const submitError = ref('')
-const vaccinateForm = ref({
-  vaccineId:        '',
-  doseNumber:       '',
-  dateAdministered: new Date().toISOString().split('T')[0],
-  inventoryId:      '',
-  remarks:          '',
-})
 const inventoryOptions = ref([])
 const loadingInventory = ref(false)
+const form = ref({})
 
-// Fetches available batches for a vaccine, FIFO-sorted by expiry,
-// filters out inactive/expired/out-of-stock ones, and auto-selects
-// the earliest-expiring valid batch. Mirrors DoctorPatients.vue.
-async function fetchInventoryFor(vaccineId) {
-  vaccinateForm.value.inventoryId = ''
+function blankForm() {
+  return { manual: false, vaccineId: '', vaccineName: '', doseNumber: '', date: todayISO, inventoryId: '', remarks: '' }
+}
+
+function openRecord(dose) {
+  form.value = { ...blankForm(), vaccineId: dose.vaccineID, vaccineName: dose.vaccineName, doseNumber: dose.doseNumber }
+  submitError.value = ''
+  showModal.value = true
+  fetchInventory(dose.vaccineID)
+}
+
+function openManual() {
+  form.value = { ...blankForm(), manual: true }
+  inventoryOptions.value = []
+  submitError.value = ''
+  showModal.value = true
+}
+
+function closeModal() { showModal.value = false }
+
+const manualDoses = computed(() => {
+  const v = vaccineList.value.find(v => v.vaccineID === form.value.vaccineId)
+  const n = v?.doses?.length || v?.numberOfRequiredDoses || 1
+  return Array.from({ length: n }, (_, i) => i + 1)
+})
+
+function onManualVaccineChange() {
+  const v = vaccineList.value.find(v => v.vaccineID === form.value.vaccineId)
+  form.value.vaccineName = v?.vaccineName || ''
+  form.value.doseNumber = ''
+  fetchInventory(form.value.vaccineId)
+}
+
+// Usable batches only (active, in stock, not expired), earliest expiry first.
+async function fetchInventory(vaccineId) {
+  form.value.inventoryId = ''
   inventoryOptions.value = []
   if (!vaccineId) return
   loadingInventory.value = true
   try {
-    const res = await fetch(`${API_BASE}/VaccineInventory/vaccine/${vaccineId}`, { headers: authHeaders() })
-    if (!res.ok) throw new Error(`VaccineInventory request failed (${res.status})`)
-    const data = await res.json()
-    const today = new Date().setHours(0, 0, 0, 0)
-    inventoryOptions.value = data
-      .filter(i => (i.status ?? i.Status) && (i.currentQuantity ?? i.CurrentQuantity) > 0
-        && new Date(i.expirationDate ?? i.ExpirationDate).setHours(0, 0, 0, 0) >= today)
-      .sort((a, b) => new Date(a.expirationDate ?? a.ExpirationDate) - new Date(b.expirationDate ?? b.ExpirationDate))
-      .map(i => ({
-        inventoryId: i.inventoryID ?? i.InventoryID,
-        lotNumber: i.lotNumber ?? i.LotNumber,
-        expirationDate: i.expirationDate ?? i.ExpirationDate,
-        currentQuantity: i.currentQuantity ?? i.CurrentQuantity,
-      }))
-    if (inventoryOptions.value.length) vaccinateForm.value.inventoryId = inventoryOptions.value[0].inventoryId
+    const res = await axios.get(`${API}/api/VaccineInventory/vaccine/${vaccineId}`)
+    inventoryOptions.value = res.data
+      .filter(i => i.status && i.currentQuantity > 0 && dateOnly(i.expirationDate) >= todayISO)
+      .sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate))
+      .map(i => ({ inventoryId: i.inventoryID, lotNumber: i.lotNumber, expirationDate: i.expirationDate, currentQuantity: i.currentQuantity }))
+    if (inventoryOptions.value.length) form.value.inventoryId = inventoryOptions.value[0].inventoryId
   } catch (e) {
-    console.error('fetchInventoryFor:', e)
+    console.error('fetchInventory:', e)
   } finally {
     loadingInventory.value = false
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// SUBMIT — POST /api/VaccinationRecords, then close out the queue
-// entry. Uses PATCH /api/Queue/{queueId}/complete (confirmed in
-// QueueController.cs) rather than PUT /{id}/status: /complete also
-// auto-advances the next Waiting visit to InProgress, matching what
-// the Doctor dashboard does. Note a Queues row is one PARENT VISIT,
-// so completing it closes out every child in that visit together.
-// ─────────────────────────────────────────────────────────────
-async function submitVaccination() {
-  const f = vaccinateForm.value
-  if (!f.vaccineId || !f.doseNumber || !f.dateAdministered || !f.inventoryId) return
+const canSubmit = computed(() =>
+  form.value.vaccineId && form.value.doseNumber && form.value.date && form.value.inventoryId
+)
 
+async function submitDose() {
+  if (!canSubmit.value) return
   submitting.value = true
   submitError.value = ''
+  const f = form.value
+  const batch = inventoryOptions.value.find(i => i.inventoryId === f.inventoryId)
   try {
-    const res = await fetch(`${API_BASE}/VaccinationRecords`, {
-      method: 'POST',
-      headers: authHeaders(true),
-      body: JSON.stringify({
-        childID:              child.value.childID,
-        vaccineID:            Number(f.vaccineId),
-        doseNumber:           Number(f.doseNumber),
-        vaccinationDate:      f.dateAdministered,
-        inventoryID:          Number(f.inventoryId),
-        administeredByUserID: worker.value.userId,
-        nurseObservation:     f.remarks || null,
-      }),
+    await axios.post(`${API}/api/VaccinationRecords`, {
+      childID: childId.value,
+      vaccineID: Number(f.vaccineId),
+      doseNumber: Number(f.doseNumber),
+      vaccinationDate: f.date,
+      inventoryID: Number(f.inventoryId),
+      administeredByUserID: user.UserID,
+      nurseObservation: f.remarks || null,
     })
-    if (!res.ok) throw new Error(`VaccinationRecords POST failed (${res.status})`)
 
-    try {
-      await fetch(`${API_BASE}/Queue/${queueId.value}/complete`, {
-        method: 'PATCH',
-        headers: authHeaders(true),
-      })
-    } catch (e) {
-      // Non-fatal — the vaccination record itself was already saved.
-      console.error('Queue status update to Completed failed:', e)
-    }
+    await Promise.all([loadTimeline(), loadHistory()])
 
-    showToast(`Vaccination recorded for ${child.value.name}`)
-    setTimeout(() => router.push('/healthcare/queue'), 900)
-  } catch (err) {
-    console.error('submitVaccination error:', err)
-    submitError.value = 'Failed to save. Please try again.'
+    // Show the date the recalculation engine just assigned to the next dose.
+    const next = timeline.value
+      .filter(t => t.vaccineID === Number(f.vaccineId) && t.doseNumber > Number(f.doseNumber) && t.status === 'Pending')
+      .sort((a, b) => a.doseNumber - b.doseNumber)[0]
+
+    givenThisVisit.value.push({
+      key: `${f.vaccineId}-${f.doseNumber}`,
+      vaccineName: f.vaccineName,
+      doseNumber: f.doseNumber,
+      lotNumber: batch?.lotNumber || '—',
+      nextLabel: next ? `Dose ${next.doseNumber} on ${formatDate(next.scheduledDate)}` : '',
+    })
+
+    showModal.value = false
+    showToast(`${f.vaccineName} Dose ${f.doseNumber} recorded for ${child.value.name}`)
+  } catch (e) {
+    console.error('submitDose:', e)
+    submitError.value = e.response?.data?.message || 'Failed to save. Please try again.'
   } finally {
     submitting.value = false
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// TOAST
+// COMPLETE VISIT — closes the queue entry (the whole family's visit)
+// and lets the Admission Staff call the next patient.
 // ─────────────────────────────────────────────────────────────
-const toast = ref({ show: false, message: '' })
-function showToast(msg) {
-  toast.value = { show: true, message: msg }
-  setTimeout(() => toast.value.show = false, 3500)
+const completing = ref(false)
+
+async function completeVisit() {
+  if (dueDoses.value.length > 0 &&
+      !confirm(`${dueDoses.value.length} due dose(s) were not recorded. Complete the visit anyway?`)) return
+  completing.value = true
+  try {
+    await axios.patch(`${API}/api/Queue/${queueId.value}/complete`)
+    showToast('Visit completed')
+    setTimeout(() => router.push('/healthcare/queue'), 700)
+  } catch (e) {
+    console.error('completeVisit:', e)
+    showToast('Could not complete the visit. Please try again.')
+  } finally {
+    completing.value = false
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────
-const AVATAR_COLORS = ['#4a7c59', '#6b7c45', '#8b5e3c', '#4a6fa5', '#7b4f8e', '#5a7a6b', '#8b6914']
-function avatarColor(name) {
-  if (!name) return AVATAR_COLORS[0]
-  return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]
+const toast = ref('')
+function showToast(msg) {
+  toast.value = msg
+  setTimeout(() => { toast.value = '' }, 3500)
 }
-function initials(name) {
-  if (!name) return '?'
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+
+function hasReaction(h) {
+  const t = (h.nurseObservation || '').toLowerCase()
+  return !!t && !/no (adverse )?reaction/.test(t)
 }
+
+function toISODate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function dateOnly(value) { return value ? String(value).slice(0, 10) : '' }
+
+function formatDate(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function ageLabel(birth) {
+  if (!birth) return '—'
+  const b = new Date(birth), now = new Date()
+  const days = Math.floor((now - b) / 86400000)
+  if (days < 31) return `${days} day${days === 1 ? '' : 's'} old`
+  let months = (now.getFullYear() - b.getFullYear()) * 12 + (now.getMonth() - b.getMonth())
+  if (now.getDate() < b.getDate()) months--
+  if (months < 24) return `${months} month${months === 1 ? '' : 's'}`
+  const years = Math.floor(months / 12)
+  return `${years} yr${years === 1 ? '' : 's'}`
+}
+
+const AVATAR_COLORS = ['#4a7c59','#6b7c45','#8b5e3c','#4a6fa5','#7b4f8e','#5a7a6b','#8b6914']
+function avatarColor(name) { return name ? AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length] : AVATAR_COLORS[0] }
+function initials(name) { return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?' }
 </script>
 
 <style scoped>

@@ -1,22 +1,16 @@
 <template>
   <div class="flex h-screen bg-slate-50 font-sans antialiased text-slate-900">
 
-    <HealthcareSidebar @logout="logout" />
+    <HealthcareSidebar />
 
+    <!-- MAIN -->
     <div class="flex flex-col flex-1 overflow-hidden">
-      <HealthcareHeader :worker="worker" title="Reports" />
+      <HealthcareHeader />
 
-      <!-- PAGE CONTENT -->
       <main class="flex-1 overflow-y-auto p-6">
         <div class="mb-6">
           <h1 class="text-2xl font-bold text-slate-800">Reports</h1>
           <p class="text-sm text-slate-500 mt-1">Vaccination statistics and analytics</p>
-        </div>
-
-        <!-- LOAD ERROR -->
-        <div v-if="loadError" class="mb-6 flex items-start gap-2 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
-          <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{{ loadError }}</span>
         </div>
 
         <!-- STAT CARDS -->
@@ -52,10 +46,8 @@
           <!-- PIE CHART: Most Given Vaccines -->
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <h3 class="font-semibold text-slate-800 mb-4">Most Given Vaccines</h3>
-            <div v-if="vaccineBreakdown.length === 0" class="text-sm text-slate-400 py-8 text-center">
-              No completed vaccinations yet
-            </div>
-            <div v-else class="flex items-center gap-6">
+            <div class="flex items-center gap-6">
+              <!-- SVG Pie -->
               <svg viewBox="0 0 100 100" class="w-36 h-36 -rotate-90 shrink-0">
                 <circle v-for="(seg, i) in pieSegments" :key="i"
                   cx="50" cy="50" r="40"
@@ -65,6 +57,7 @@
                   :stroke-dasharray="`${seg.dash} ${251.2 - seg.dash}`"
                   :stroke-dashoffset="-seg.offset" />
               </svg>
+              <!-- Legend -->
               <div class="space-y-2">
                 <div v-for="v in vaccineBreakdown" :key="v.name" class="flex items-center justify-between gap-8">
                   <div class="flex items-center gap-2">
@@ -80,10 +73,7 @@
           <!-- STATUS BREAKDOWN -->
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <h3 class="font-semibold text-slate-800 mb-4">Vaccination Status Breakdown</h3>
-            <div v-if="statusBreakdown.length === 0" class="text-sm text-slate-400 py-4 text-center">
-              No records yet
-            </div>
-            <div v-else class="space-y-3">
+            <div class="space-y-3">
               <div v-for="s in statusBreakdown" :key="s.label">
                 <div class="flex items-center justify-between mb-1">
                   <span class="text-xs text-slate-600">{{ s.label }}</span>
@@ -100,10 +90,7 @@
           <!-- RECENT ACTIVITY -->
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <h3 class="font-semibold text-slate-800 mb-4">Recent Vaccinations</h3>
-            <div v-if="recentActivity.length === 0" class="text-sm text-slate-400 py-4 text-center">
-              No vaccinations recorded yet
-            </div>
-            <div v-else class="space-y-3">
+            <div class="space-y-3">
               <div v-for="rec in recentActivity" :key="rec.id"
                 class="flex items-center gap-3">
                 <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
@@ -122,88 +109,63 @@
         </div>
       </main>
     </div>
+
+
   </div>
 </template>
 
 <script setup>
-import { getUser, getToken, logout as clearSession } from '@/utils/auth'
+import { getUser } from '@/utils/auth'
+import HealthcareSidebar from './Components/HealthcareSidebar.vue'
+import HealthcareHeader from './Components/HealthcareHeader.vue'
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { AlertCircle, Syringe, TrendingUp, UserCheck } from 'lucide-vue-next'
-import HealthcareSidebar from '@/components/Healthcare/Components/HealtcareSidebar.vue'
-import HealthcareHeader from '@/components/Healthcare/Components/HealthcareHeader.vue'
+import { useRouter, useRoute } from 'vue-router'
+import axios from 'axios'
+import {
+  Home, Users, Calendar, Syringe, FileText, Settings,
+  Search, Bell, LogOut, TrendingUp, AlertCircle, Clock, UserCheck,
+  ListChecks
+} from 'lucide-vue-next'
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
 const router = useRouter()
+const route  = useRoute()
 
-// VITE_API_URL is the bare host (no /api) per the project's existing
-// convention — /api is appended here, not stored in the env var.
-const API_BASE = `${(import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')}/api`
-
-function authHeaders() {
-  return { Authorization: `Bearer ${getToken()}` }
-}
-
-// ─────────────────────────────────────────────────────────────
-// AUTH
-// SKIP_AUTH lets you test the page without a real login session.
-// Set to false (or delete the block) before shipping.
-// ─────────────────────────────────────────────────────────────
-const SKIP_AUTH = false
-
-const worker = ref({ userId: '', fullName: '', userType: '' })
-
+const doctor = ref({ userId: '', fullName: '', userType: '' })
 onMounted(() => {
-  const account = getUser()
-
-  if (!account && !SKIP_AUTH) {
-    router.push('/')
-    return
-  }
-
-  const u = account || { UserID: 'dev-test-user', FirstName: 'Test', LastName: 'Worker', UserType: 'Nurse' }
-
-  worker.value = {
-    userId:   u.UserID || u.userID,
-    fullName: `${u.FirstName || u.firstName} ${u.LastName || u.lastName}`.trim(),
-    userType: u.UserType || u.userType || u.role,
-  }
-
+  const u = getUser()
+if (!u) { router.push('/'); return }
+  doctor.value = { userId: u.UserID, fullName: `${u.FirstName} ${u.LastName}`, userType: u.UserType }
   fetchRecords()
 })
+const doctorInitials = computed(() =>
+  doctor.value.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+)
 
-function logout() {
-  clearSession()
-  router.push('/')
-}
 
-// ─────────────────────────────────────────────────────────────
-// REAL DATA
-// Same endpoint as HealthcareHome's "Vaccinated Today" card
-// (GET /api/VaccinationRecords/all) so this always reflects what's
-// actually in the database, not mock numbers.
-// ─────────────────────────────────────────────────────────────
-const records    = ref([])
-const loadError  = ref('')
+// ── REAL DATA ────────────────────────────────────────────────
+// Reuses the same endpoint as Vaccination Records (GET /api/VaccinationRecords/all)
+// so this page always reflects what's actually in the database, not mock numbers.
+const records      = ref([])
+const recordsReady = ref(false)
 
 async function fetchRecords() {
-  loadError.value = ''
   try {
-    const res = await fetch(`${API_BASE}/VaccinationRecords/all`, { headers: authHeaders() })
-    if (!res.ok) throw new Error(`VaccinationRecords request failed (${res.status})`)
-    const data = await res.json()
-
-    records.value = data.map(r => ({
-      recordId:         r.vaccinationRecordID ?? r.recordID ?? r.RecordID,
-      childId:          r.childID ?? r.ChildID,
-      childName:        r.childName ?? r.ChildName ?? 'Unknown',
-      vaccineName:      r.vaccineName ?? r.VaccineName ?? 'Unknown',
-      dateAdministered: r.vaccinationDate ?? r.VaccinationDate ?? null,
-      status:           r.status ?? r.Status ?? 'Completed',
+    const res = await axios.get(`${API}/api/VaccinationRecords/all`)
+    records.value = res.data.map(r => ({
+      recordId:         r.recordID   ?? r.RecordID,
+      childId:          r.childID    ?? r.ChildID,
+      childName:        r.childName  ?? r.ChildName  ?? '—',
+      vaccineName:      r.vaccineName ?? r.VaccineName ?? `Vaccine ${r.vaccineID ?? r.VaccineID}`,
+      dateAdministered: r.vaccinationDate ?? r.dateAdministered ?? r.DateAdministered ?? null,
+      scheduledDate:    r.scheduledDate ?? r.ScheduledDate ?? null,
+      status:           r.status     ?? r.Status     ?? 'Pending',
     }))
-  } catch (e) {
-    console.error('HealthcareReports fetchRecords:', e)
-    loadError.value = 'Could not load vaccination records. Please refresh.'
+  } catch (err) {
+    console.error('DoctorReports fetchRecords error:', err)
     records.value = []
+  } finally {
+    recordsReady.value = true
   }
 }
 
@@ -331,4 +293,8 @@ function initials(name) {
   if (!name) return '?'
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
+
 </script>
+
+<style scoped>
+</style>

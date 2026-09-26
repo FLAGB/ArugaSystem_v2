@@ -8,7 +8,7 @@ import {
   ArrowRightLeft, UserCircle2, Star, ShieldCheck, Trash2, AlertTriangle,
 } from "lucide-vue-next";
 import axios from "axios";
-import { addDays, isMonday, isWednesday, isFriday } from "date-fns";
+
 import StaffSidebar from "./StaffSidebar.vue";
 import StaffTopbar from "./StaffTopbar.vue";
 
@@ -38,6 +38,7 @@ const api = {
   createParent:                 (payload)     => axios.post(`${API_BASE}/Parents`, payload).then(r => r.data),
   updateParent:                 (id, payload) => axios.put(`${API_BASE}/Parents/${id}`, payload).then(r => r.data),
   getAllChildren:               ()            => axios.get(`${API_BASE}/Children/all`).then(r => r.data),
+  getChildrenOverview:          ()            => axios.get(`${API_BASE}/Children/overview`).then(r => r.data),
   getChildrenByParent:          (parentId)    => axios.get(`${API_BASE}/Children/parent/${parentId}`).then(r => r.data),
   createChild:                  (payload)     => axios.post(`${API_BASE}/Children`, payload).then(r => r.data),
   updateChild:                  (id, payload) => axios.put(`${API_BASE}/Children/${id}`, payload).then(r => r.data),
@@ -113,121 +114,42 @@ function calculateAge(birth) {
 }
 function toDateInputValue(iso) {
   if (!iso) return "";
+  // "2026-07-22T00:00:00" -> "2026-07-22". Don't go through toISOString():
+  // that converts to UTC and shifts Philippine dates back one day.
+  if (/^\d{4}-\d{2}-\d{2}/.test(String(iso))) return String(iso).slice(0, 10);
   const d = new Date(iso);
-  return isNaN(d) ? String(iso).slice(0,10) : d.toISOString().slice(0,10);
+  return isNaN(d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 const mapParent = (p) => ({
-  id:p.parentID, initials:`${p.firstName[0]}${p.lastName[0]}`.toUpperCase(), name:`${p.firstName} ${p.lastName}`,
-  relationship:"Parent", contact:p.contactNo, email:p.email, username:p.email.split("@")[0],
+  id:p.parentID, initials:`${p.firstName?.[0] || ""}${p.lastName?.[0] || ""}`.toUpperCase(), name:`${p.firstName} ${p.lastName}`,
+  // A contact-only guardian (no portal login) has no email
+  relationship:"Parent", contact:p.contactNo, email:p.email || "", username:(p.email || "").split("@")[0] || "—",
   // NOTE: ParentsController has no Status field/endpoint — hardcoded until the API exposes one.
   status:"Active", address:p.address, barangay:p.barangayNo,
   raw:p, // original API record, kept so edits that don't touch every field don't lose data
 });
-// ── Vaccine master (DOH schedule) — duplicated per-page, see HARD RULE 1 ───
-// Ported from Scheduled.vue (parent side) so "next vaccine due" is computed
-// identically here for staff. Keep in sync with that file if the schedule
-// ever changes.
-const VACCINE_MASTER = [
-  { vaccineId: 5,  name: 'BCG Vaccine',                      doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 6,  name: 'Hepatitis B Vaccine',              doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 7,  name: 'Pentavalent (DPT-Hep B-HIB)',      doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 8,  name: 'Oral Polio Vaccine (OPV)',         doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 9,  name: 'Inactivated Polio Vaccine (IPV)',  doses: [{ n: 1, gap: 105 }, { n: 2, gap: 165}] },
-  { vaccineId: 10, name: 'Pneumococcal Conj. Vaccine (PCV)', doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 11, name: 'MMR Vaccine',                      doses: [{ n: 1, gap: 270 }, { n: 2, gap: 90 }] },
-];
 
-function snapToClinicDay(date) {
-  let d = new Date(date);
-  while (!(isMonday(d) || isWednesday(d) || isFriday(d))) d = addDays(d, 1);
-  return d;
-}
+// "Next Vaccine" and the status badge come from GET /api/Children/overview,
+// i.e. the child's real vaccination timeline (the same schedule parents and
+// health workers see, recalculated after every dose), instead of a copy of
+// the DOH schedule computed here in the browser.
+const OVERVIEW_STATUS = { "Partially Vaccinated": "In Progress" };
 
-// Same cascade math as Scheduled.vue's computedVaccineList, but callable
-// per-child in a loop (that file's version is a Vue `computed` bound to a
-// single selectedChild, which doesn't fit mapping a whole list here).
-function computeVaccineList(birthDateRaw, completedRecords) {
-  if (!birthDateRaw) return [];
-  const birth = new Date(birthDateRaw);
-  const result = [];
-
-  for (const vaccine of VACCINE_MASTER) {
-    let prevActualDate = null;
-    let prevOriginalDate = null;
-
-    for (const dose of vaccine.doses) {
-      const record = completedRecords.find(r =>
-        Number(r.vaccineID ?? r.vaccineId) === vaccine.vaccineId &&
-        Number(r.doseNumber ?? r.DoseNumber) === dose.n &&
-        r.status === 'Completed' &&
-        r.dateAdministered
-      );
-
-      const originalDueDate = dose.n === 1
-        ? snapToClinicDay(addDays(birth, dose.gap))
-        : snapToClinicDay(addDays(prevOriginalDate ?? birth, dose.gap));
-
-      let scheduledDate;
-      if (record) {
-        scheduledDate = new Date(record.dateAdministered);
-      } else if (dose.n === 1) {
-        scheduledDate = snapToClinicDay(addDays(birth, dose.gap));
-      } else {
-        const base = prevActualDate ?? prevOriginalDate ?? birth;
-        scheduledDate = snapToClinicDay(addDays(base, dose.gap));
-      }
-
-      prevOriginalDate = originalDueDate;
-      prevActualDate = record ? new Date(record.dateAdministered) : null;
-
-      result.push({
-        vaccineId: vaccine.vaccineId,
-        name: vaccine.name,
-        doseNumber: dose.n,
-        scheduledDate,
-        isCompleted: !!record,
-      });
-    }
-  }
-  return result;
-}
-
-// Derives the table's "Next Vaccine" text and "Vaccination Status" badge
-// from the same per-dose list the calendar/detail view uses, instead of
-// the previous hardcoded "Upcoming" / "—" stubs.
-function deriveVaccineSummary(birthDateRaw, completedRecords) {
-  const list = computeVaccineList(birthDateRaw, completedRecords);
-  if (list.length === 0) return { nextVaccine: "—", vaccStatus: "Upcoming" };
-
-  const pending = list.filter(d => !d.isCompleted);
-  const completedCount = list.length - pending.length;
-
-  if (pending.length === 0) {
-    return { nextVaccine: "—", vaccStatus: "Fully Vaccinated" };
-  }
-
-  const next = pending.reduce((a, b) => (a.scheduledDate <= b.scheduledDate ? a : b));
-  const nextVaccine = `${next.name} (Dose ${next.doseNumber}) · ${next.scheduledDate.toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"})}`;
-
-  const today = new Date();
-  const isOverdue = pending.some(d => d.scheduledDate < today);
-  const vaccStatus = isOverdue ? "Delayed" : (completedCount > 0 ? "In Progress" : "Upcoming");
-
-  return { nextVaccine, vaccStatus };
-}
-
-const mapChild = (c, completedRecords = []) => {
+const mapChild = (c, overview = null) => {
   const birth = new Date(c.birthDate);
-  const { nextVaccine, vaccStatus } = deriveVaccineSummary(c.birthDate, completedRecords);
+  const vaccStatus = OVERVIEW_STATUS[overview?.vaccinationStatus] || overview?.vaccinationStatus || "Upcoming";
+  const nextVaccine = overview?.nextVaccine
+    ? `${overview.nextVaccine} · ${new Date(overview.nextDueDate).toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"})}`
+    : "—";
   return {
     id:c.childID, name:`${c.firstName} ${c.middleName||""} ${c.lastName}`.trim(),
     birthDate:birth.toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"}),
     birthDateRaw:c.birthDate, // ISO value straight from the API, used for editing/saving
     birthPlace:c.placeOfBirth||"—", age:calculateAge(birth), sex:c.sex||"—",
     height:c.birthHeight?`${c.birthHeight} cm`:"—", weight:c.birthWeight?`${c.birthWeight} kg`:"—",
-    // vaccStatus/nextVaccine now computed from real VaccinationRecords via
-    // the same DOH-schedule cascade Scheduled.vue uses (see deriveVaccineSummary above).
+    allergies:c.allergies||"",
+    familyNo:c.familyNo||"",
     vaccStatus, nextVaccine, status:"Active", address:c.address||"—", barangay:c.barangay||"—", notifyMode:"primary",
     raw:c, // original API record, kept so edits that don't touch every field don't lose data
   };
@@ -235,52 +157,24 @@ const mapChild = (c, completedRecords = []) => {
 
 
 async function loadAll() {
-    console.log("loadAll started");
-
     isLoading.value = true;
 
     try {
-        const [pd, cd] = await Promise.all([
+        // One request for every child's schedule summary (not one per child)
+        const [pd, cd, ov] = await Promise.all([
             api.getAllParents(),
-            api.getAllChildren()
+            api.getAllChildren(),
+            api.getChildrenOverview().catch(() => []),
         ]);
-
-        console.log("typeof parents:", typeof pd);
-        console.log("parents raw:", pd);
-        console.log("Array?", Array.isArray(pd));
-
-        console.log("typeof children:", typeof cd);
-        console.log("children raw:", cd);
-        console.log("Array?", Array.isArray(cd));
 
         parents.value = Array.isArray(pd)
             ? pd.map(mapParent)
             : [];
 
         const childList = Array.isArray(cd) ? cd : [];
+        const overviewById = new Map((Array.isArray(ov) ? ov : []).map(o => [String(o.childID).toLowerCase(), o]));
 
-        // One vaccination-history call per child — there's no bulk
-        // "next dose for all children" endpoint yet. Fine at current
-        // patient volume; worth revisiting if this list grows a lot.
-        // A failed fetch for one child (e.g. no records yet) shouldn't
-        // block the rest of the table from loading.
-        const recordsPerChild = await Promise.all(
-            childList.map(c =>
-                api.getChildVaccinations(c.childID)
-                    .then(records => Array.isArray(records) ? records : [])
-                    .catch(() => [])
-            )
-        );
-
-        // Normalize field names the same way Scheduled.vue does — the
-        // backend returns vaccinationDate, not dateAdministered.
-        children.value = childList.map((c, i) => {
-            const normalizedRecords = recordsPerChild[i].map(r => ({
-                ...r,
-                dateAdministered: r.dateAdministered ?? r.vaccinationDate ?? null,
-            }));
-            return mapChild(c, normalizedRecords);
-        });
+        children.value = childList.map(c => mapChild(c, overviewById.get(String(c.childID).toLowerCase())));
 
         // Load actual parent-child links after children are available.
         await loadRelationships();
@@ -393,13 +287,14 @@ const childSummary = computed(() => [
 
 /* ============================= Search ============================= */
 const searchQuery = ref("");
+const searchTerm = () => searchQuery.value.trim().toLowerCase();
 const filteredParents = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  return q ? parents.value.filter(p=>p.name.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)||p.contact.includes(q)) : parents.value;
+  const q = searchTerm();
+  return q ? parents.value.filter(p=>p.name.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)||(p.contact||"").includes(q)||(p.email||"").toLowerCase().includes(q)||String(p.barangay||"").toLowerCase().includes(q)) : parents.value;
 });
 const filteredChildren = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  return q ? children.value.filter(c=>c.name.toLowerCase().includes(q)||c.id.toLowerCase().includes(q)) : children.value;
+  const q = searchTerm();
+  return q ? children.value.filter(c=>c.name.toLowerCase().includes(q)||c.familyNo.toLowerCase().includes(q)||String(c.barangay).toLowerCase().includes(q)||c.id.toLowerCase().includes(q)) : children.value;
 });
 
 /* ============================= Pagination ============================= */
@@ -469,7 +364,7 @@ function goToPage(n) {
 ========================================================================= */
 const parentColumns = [
   { key:"avatar", badge:"avatar" },
-  { key:"id", label:"Parent ID" },
+  { key:"barangay", label:"Barangay No.", muted:true, value:(p)=>p.barangay || "—" },
   { key:"name", label:"Full Name" },
   { key:"relationship", label:"Relationship", muted:true },
   { key:"contact", label:"Contact Number", muted:true },
@@ -479,7 +374,9 @@ const parentColumns = [
 ];
 const childColumns = [
   { key:"avatar", badge:"childIcon" },
-  { key:"id", label:"Patient ID" },
+  // The health center identifies families by Family No. and Barangay, not by a system ID
+  { key:"familyNo", label:"Family No.", value:(c)=>c.familyNo || "—" },
+  { key:"barangay", label:"Barangay", muted:true },
   { key:"name", label:"Child Name" },
   { key:"age", label:"Age", muted:true },
   { key:"sex", label:"Sex", muted:true },
@@ -632,8 +529,8 @@ const manageFromLinkedAccountsModal = () => { showLinkedAccountsModal.value=fals
    .child / .rel carry whatever context the caller had.
 ========================================================================= */
 const PICKER_CONFIG = {
-  linkChild:  { title:"Link Existing Child",   searchPlaceholder:"Search by Patient ID, Child Name, or Birth Date...", showPrimary:true },
-  linkParent: { title:"Link Parent / Guardian", searchPlaceholder:"Search by Parent ID, Name, Phone, or Email...",     showPrimary:true },
+  linkChild:  { title:"Link Existing Child",   searchPlaceholder:"Search by Child Name, Family No., or Birth Date...", showPrimary:true },
+  linkParent: { title:"Link Parent / Guardian", searchPlaceholder:"Search by Name, Phone, Email, or Barangay...",     showPrimary:true },
   transfer:   { title:"Transfer Guardian",      searchPlaceholder:"Search for a parent account...",                    showPrimary:false },
 };
 const picker = ref({
@@ -678,16 +575,16 @@ const pickerResults = computed(() => {
   if (s.mode==="linkChild") {
     const linked = s.parent ? relationshipsOfParent(s.parent).map(r=>r.childId) : [];
     const list = children.value.filter(c=>!linked.includes(c.id));
-    return q ? list.filter(c=>c.name.toLowerCase().includes(q)||c.id.toLowerCase().includes(q)||c.birthDate.toLowerCase().includes(q)) : list;
+    return q ? list.filter(c=>c.name.toLowerCase().includes(q)||c.familyNo.toLowerCase().includes(q)||c.birthDate.toLowerCase().includes(q)) : list;
   }
   if (s.mode==="linkParent") {
     const linked = s.child ? relationshipsOfChild(s.child).map(r=>r.parentId) : [];
     const list = parents.value.filter(p=>!linked.includes(p.id));
-    return q ? list.filter(p=>p.name.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)||p.contact.includes(q)||p.email.toLowerCase().includes(q)) : list;
+    return q ? list.filter(p=>p.name.toLowerCase().includes(q)||(p.contact||"").includes(q)||(p.email||"").toLowerCase().includes(q)||String(p.barangay||"").includes(q)) : list;
   }
   if (s.mode==="transfer") {
     const list = parents.value.filter(p=>p.id!==s.rel?.parentId);
-    return q ? list.filter(p=>p.name.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)||p.contact.includes(q)) : list;
+    return q ? list.filter(p=>p.name.toLowerCase().includes(q)||(p.contact||"").includes(q)||(p.email||"").toLowerCase().includes(q)) : list;
   }
   return [];
 });
@@ -752,54 +649,81 @@ async function confirmPicker() {
    GENERIC EDIT MODAL — replaces Edit Parent / Edit Child. Fields v-model
    onto a working copy (editModal.item).
 ========================================================================= */
+// Names are edited as separate First / Middle / Last fields: splitting one
+// "Full Name" box on spaces broke two-word first names ("Mark Anthony").
 const EDIT_FIELDS = {
   parent: [
-    { key:"name", label:"Full Name" }, { key:"relationship", label:"Relationship", type:"select", options:relationshipOptions },
-    { key:"contact", label:"Contact Number" }, { key:"email", label:"Email" }, { key:"address", label:"Address" },
+    { key:"firstName", label:"First Name", group:"name" }, { key:"middleName", label:"Middle Name", group:"name" }, { key:"lastName", label:"Last Name", group:"name" },
+    { key:"contact", label:"Contact Number", group:"contact" }, { key:"barangay", label:"Barangay No.", group:"contact" },
+    { key:"email", label:"Email" }, { key:"address", label:"Address" },
   ],
   child: [
     { key:"firstName", label:"First Name", group:"name" }, { key:"middleName", label:"Middle Name", group:"name" }, { key:"lastName", label:"Last Name", group:"name" },
-    { key:"birthDate", label:"Birth Date" },
-    { key:"height", label:"Birth Height (cm)", group:"metrics" }, { key:"weight", label:"Birth Weight (kg)", group:"metrics" }, { key:"address", label:"Address" },
+    { key:"birthDateInput", label:"Birth Date", type:"date", group:"birth" }, { key:"sex", label:"Sex", type:"select", options:["Male","Female"], group:"birth" },
+    { key:"familyNo", label:"Family No.", group:"family" }, { key:"barangayInput", label:"Barangay", type:"number", group:"family" },
+    { key:"height", label:"Birth Height (cm)", type:"number", group:"metrics" }, { key:"weight", label:"Birth Weight (kg)", type:"number", group:"metrics" },
+    { key:"allergies", label:"Allergies (leave blank if none)" },
+    { key:"address", label:"Address" },
   ],
 };
 const editModal = ref({ open:false, kind:null, item:null });
 function openEdit(kind, item) {
   const working = { ...item };
+  const raw = item.raw || {};
   if (kind === "child") {
-    // The child row's `.name` is a display-only concatenation of first/middle/last —
-    // editing that combined string and re-splitting it on save was corrupting names
-    // (middle name got duplicated on every save). Edit the three real parts instead,
-    // seeded from the original API record so nothing gets guessed from whitespace.
-    const raw = item.raw || {};
+    // Seed every field from the original API record, not from the display
+    // strings in the table ("50 cm", "—", "Jan 5, 2026").
     working.firstName = raw.firstName || "";
     working.middleName = raw.middleName || "";
     working.lastName = raw.lastName || "";
+    working.birthDateInput = toDateInputValue(raw.birthDate);
+    working.sex = raw.sex || "";
+    working.height = raw.birthHeight ?? "";
+    working.weight = raw.birthWeight ?? "";
+    working.allergies = raw.allergies || "";
+    working.familyNo = raw.familyNo || "";
+    working.barangayInput = raw.barangay ?? "";
+    working.address = raw.address || "";
+  } else {
+    working.firstName = raw.firstName || "";
+    working.middleName = raw.middleName || "";
+    working.lastName = raw.lastName || "";
+    working.contact = raw.contactNo || "";
+    working.barangay = raw.barangayNo || "";
+    working.email = raw.email || "";
+    working.address = raw.address || "";
   }
   editModal.value = { open:true, kind, item:working };
   actionsMenuOpenFor.value = null;
 }
 
+const toNumberOrNull = (v) => (v === "" || v == null || isNaN(parseFloat(v)) ? null : parseFloat(v));
+
 async function submitEdit() {
   const kind = editModal.value.kind, item = editModal.value.item;
   try {
     if (kind==="parent") {
+      if (!item.firstName?.trim() || !item.lastName?.trim()) { error.value = "First and last name are required."; return; }
       await api.updateParent(item.id, {
-        firstName:item.name.split(" ")[0], lastName:item.name.split(" ").slice(1).join(" ")||"—",
-        email:item.email, contactNo:item.contact, address:item.address, barangayNo:item.barangay||"",
+        firstName:item.firstName.trim(), middleName:item.middleName?.trim() || "", lastName:item.lastName.trim(),
+        email:item.email?.trim() || null, contactNo:item.contact, address:item.address || "", barangayNo:item.barangay || "",
       });
     } else {
       const raw = item.raw || {};
+      if (!item.firstName?.trim() || !item.lastName?.trim()) { error.value = "First and last name are required."; return; }
+      if (!item.birthDateInput) { error.value = "Birth date is required."; return; }
       // UpdateChild (see ChildrenController) overwrites every column from the DTO, so fields this
       // form doesn't edit are re-sent from the last-known raw record to avoid wiping them out.
       await api.updateChild(item.id, {
-        firstName:item.firstName, middleName:item.middleName || "", lastName:item.lastName,
-        birthDate:item.birthDateRaw||raw.birthDate,
-        placeOfBirth:raw.placeOfBirth||"", sex:raw.sex||"", barangay:raw.barangay ?? null,
-        birthHeight:item.height !== "" && item.height != null ? parseFloat(item.height) : (raw.birthHeight ?? null),
-        birthWeight:item.weight !== "" && item.weight != null ? parseFloat(item.weight) : (raw.birthWeight ?? null),
-        address:item.address, healthCenter:raw.healthCenter||"",
-        motherName:raw.motherName||"", fatherName:raw.fatherName||"", guardianName:raw.guardianName||"",
+        firstName:item.firstName.trim(), middleName:item.middleName || "", lastName:item.lastName.trim(),
+        birthDate:item.birthDateInput,
+        placeOfBirth:raw.placeOfBirth||"", sex:item.sex || raw.sex || "",
+        barangay:item.barangayInput === "" || item.barangayInput == null ? null : parseInt(item.barangayInput, 10),
+        familyNo:item.familyNo?.trim() || null,
+        birthHeight:toNumberOrNull(item.height),
+        birthWeight:toNumberOrNull(item.weight),
+        allergies:item.allergies?.trim() || null,
+        address:item.address || "", healthCenter:raw.healthCenter||"",
       });
     }
     await loadAll();
@@ -859,7 +783,9 @@ const regParentForm = reactive({ GivenName:"", MiddleName:"", LastName:"", Email
 const lettersOnlyInput = (field) => (e) => { regParentForm[field] = e.target.value.replace(/[^a-zA-Z\s.'-]/g, ""); };
 // Digits only — blocks letters in number fields (Contact No, Barangay No).
 const numbersOnlyInput = (field) => (e) => { regParentForm[field] = e.target.value.replace(/[^0-9]/g, ""); };
-const regParentPasswordValid = computed(() => !regParentForm.CreateLogin || (regParentForm.Password.length >= 8 && regParentForm.Password.length <= 16));
+// Same rule the backend enforces (AuthController.GetPasswordComplexityError)
+const passwordRuleOk = (p) => p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p) && /[^A-Za-z0-9]/.test(p);
+const regParentPasswordValid = computed(() => !regParentForm.CreateLogin || passwordRuleOk(regParentForm.Password));
 function resetParentForm() {
   Object.assign(regParentForm, { GivenName:"", MiddleName:"", LastName:"", Email:"", ContactNo:"", BarangayNo:"", Address:"", Password:"", CreateLogin:true });
   regChildSearch.value = "";
@@ -895,7 +821,7 @@ async function submitParentRegister() {
     if (!regParentForm.Email || !regParentForm.Password) {
       error.value = "Email and password are required to give this guardian a login."; return;
     }
-    if (!regParentPasswordValid.value) { error.value = "Password must be between 8 and 16 characters."; return; }
+    if (!regParentPasswordValid.value) { error.value = "The temporary password needs 8+ characters with an uppercase letter, a lowercase letter, a number and a symbol."; return; }
   }
 
   registerSubmitting.value = true;
@@ -1001,6 +927,12 @@ function regLinkExistingParent(parent) {
   regChildForm[`${role}ID`] = parent.id;
   regChildForm[`${role}Email`] = parent.email;
   regParentSearch.value = "";
+  // Siblings share the family's Family No., barangay and address: fill
+  // them in from the parent (and an existing child) when still empty.
+  const sibling = relationshipsOfParent(parent).map(r => children.value.find(c => c.id === r.childId)).find(Boolean);
+  if (!regChildForm.FamilyNo && sibling?.familyNo) regChildForm.FamilyNo = sibling.familyNo;
+  if (!regChildForm.Barangay && parent.barangay) regChildForm.Barangay = String(parent.barangay);
+  if (!regChildForm.Address && parent.address) regChildForm.Address = parent.address;
 }
 function regClearParentRole(role) {
   regChildForm[`${role}Name`] = ""; regChildForm[`${role}ID`] = null; regChildForm[`${role}Email`] = "";
@@ -1056,10 +988,8 @@ async function submitChildRegister() {
       birthDate: regChildForm.BirthDate, placeOfBirth: regChildForm.PlaceOfBirth || null, sex: regChildForm.Sex,
       barangay: regChildForm.Barangay ? Number(regChildForm.Barangay) : null,
       address: regChildForm.Address || null, healthCenter: regChildForm.HealthCenter || null,
-      // NOTE: Child model has no BirthHeight/BirthWeight columns on the backend yet (confirmed
-      // gap) — these are sent so the values flow through the moment those columns exist, but
-      // until then the backend will just silently ignore them (extra JSON properties on a DTO
-      // don't error). Don't remove this once the backend catches up.
+      familyNo: regChildForm.FamilyNo?.trim() || null,
+      // Saved to Children.BirthHeight (cm) / BirthWeight (kg)
       birthHeight: regChildForm.BirthHeight !== null && regChildForm.BirthHeight !== "" ? Number(regChildForm.BirthHeight) : null,
       birthWeight: regChildForm.BirthWeight !== null && regChildForm.BirthWeight !== "" ? Number(regChildForm.BirthWeight) : null,
       parents: linkedParents,
@@ -1126,7 +1056,7 @@ async function submitChildRegister() {
             </div>
             <div class="flex items-center gap-2 flex-1 min-w-[240px] rounded-xl border border-stone-200 px-3 py-2.5">
               <Search :size="16" class="text-stone-400 shrink-0" />
-              <input v-model="searchQuery" type="text" :placeholder="activeTab === 'parents' ? 'Search by name, parent ID, or contact...' : 'Search by name or patient ID...'" class="flex-1 text-[13px] outline-none placeholder:text-stone-400" />
+              <input v-model="searchQuery" type="text" :placeholder="activeTab === 'parents' ? 'Search by name, contact, email or barangay...' : 'Search by name, Family No. or barangay...'" class="flex-1 text-[13px] outline-none placeholder:text-stone-400" />
             </div>
             <div class="flex-1"></div>
             <button v-if="activeTab === 'parents'" @click="openRegisterModal('parent')" class="flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white bg-emerald-700 hover:bg-emerald-800 shadow-sm"><UserPlus :size="16" /> Register Parent</button>
@@ -1321,6 +1251,8 @@ async function submitChildRegister() {
             <div><p class="text-[16px] font-bold">{{ selectedChild.name }}</p><p class="text-[12px] text-stone-500">{{ selectedChild.age }} · {{ selectedChild.sex }}</p></div>
           </div>
           <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Family No.</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.familyNo || "—" }}</p></div>
+            <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Barangay</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.barangay }}</p></div>
             <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Birth Date</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.birthDate }}</p></div>
             <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Birth Place</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.birthPlace }}</p></div>
             <div class="rounded-xl bg-stone-50 p-3"><p class="text-[10.5px] uppercase tracking-wide text-stone-500">Birth Height</p><p class="text-[13px] font-medium mt-0.5">{{ selectedChild.height }}</p></div>
@@ -1424,7 +1356,7 @@ async function submitChildRegister() {
           <button v-for="item in pickerResults" :key="item.id" @click="picker.selected = item" class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors" :class="picker.selected?.id === item.id ? 'border-emerald-500 bg-emerald-50' : 'border-stone-200 hover:bg-stone-50'">
             <div v-if="picker.mode === 'linkChild'" class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 shrink-0"><Baby :size="17" class="text-emerald-700" /></div>
             <Avatar v-else :text="item.initials" size="md" />
-            <div class="flex-1 min-w-0"><p class="text-[12.5px] font-semibold">{{ item.name }}</p><p class="text-[11px] text-stone-500">{{ item.id }} · <template v-if="picker.mode === 'linkChild'">Born {{ item.birthDate }}</template><template v-else>{{ item.contact }}</template></p></div>
+            <div class="flex-1 min-w-0"><p class="text-[12.5px] font-semibold">{{ item.name }}</p><p class="text-[11px] text-stone-500"><template v-if="picker.mode === 'linkChild'">Family No. {{ item.familyNo || "—" }} · Born {{ item.birthDate }}</template><template v-else>Brgy {{ item.barangay || "—" }} · {{ item.contact }}</template></p></div>
             <Check v-if="picker.selected?.id === item.id" :size="17" class="text-emerald-700 shrink-0" />
           </button>
           <p v-if="pickerResults.length === 0" class="text-[12.5px] text-stone-500 py-4 text-center">No matches found.</p>
@@ -1526,10 +1458,11 @@ async function submitChildRegister() {
 
           <div v-if="regParentForm.CreateLogin" class="space-y-1">
             <div class="flex justify-between items-center">
-              <label class="text-[10px] font-bold text-stone-400 uppercase ml-1">Password</label>
-              <span :class="regParentPasswordValid ? 'text-emerald-600' : 'text-rose-500'" class="text-[10px] font-bold">{{ regParentForm.Password.length }}/8-16 characters</span>
+              <label class="text-[10px] font-bold text-stone-400 uppercase ml-1">Temporary Password</label>
+              <span :class="regParentPasswordValid ? 'text-emerald-600' : 'text-rose-500'" class="text-[10px] font-bold">{{ regParentPasswordValid ? 'OK' : 'A-Z, a-z, 0-9, symbol, 8+ chars' }}</span>
             </div>
-            <input v-model="regParentForm.Password" type="password" maxlength="16" placeholder="8 to 16 characters" class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:border-emerald-500 outline-none" />
+            <input v-model="regParentForm.Password" type="password" maxlength="32" placeholder="e.g. Aruga@2026" class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:border-emerald-500 outline-none" />
+            <p class="text-[10px] text-stone-400 ml-1">Give this to the parent. They'll be asked to choose their own password the first time they sign in.</p>
           </div>
 
           <!-- LINK TO EXISTING CHILD (OPTIONAL) -->
@@ -1744,9 +1677,13 @@ async function submitChildRegister() {
               <select v-if="f.type === 'select'" v-model="editModal.item[f.key]" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-[13px] outline-none focus:border-emerald-500">
                 <option v-for="o in f.options" :key="o">{{ o }}</option>
               </select>
-              <input v-else v-model="editModal.item[f.key]" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-[13px] outline-none focus:border-emerald-500" />
+              <input v-else v-model="editModal.item[f.key]" :type="f.type || 'text'" :step="f.type === 'number' ? '0.01' : undefined" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-[13px] outline-none focus:border-emerald-500" />
             </div>
           </div>
+          <p v-if="editModal.kind === 'child'" class="text-[11px] text-stone-400">
+            Changing the birth date moves the child's upcoming vaccine dates. The parent is notified of any change.
+          </p>
+          <div v-if="error" class="rounded-xl bg-rose-50 p-3 text-[12px] text-rose-700">{{ error }}</div>
         </div>
         <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-stone-200">
           <button @click="editModal.open = false" class="rounded-xl px-4 py-2.5 text-[13px] font-medium text-stone-600 hover:bg-stone-50">Cancel</button>

@@ -17,6 +17,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // POST /api/ChildParentRelationships
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPost]
         public async Task<IActionResult> Create(
             [FromBody] CreateChildParentRelationshipDto dto)
@@ -84,6 +85,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // GET /api/ChildParentRelationships/child/{childID}
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("child/{childID}")]
         public async Task<IActionResult> GetByChild(Guid childID)
         {
@@ -117,6 +119,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // GET /api/ChildParentRelationships/parent/{parentID}
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("parent/{parentID}")]
         public async Task<IActionResult> GetByParent(Guid parentID)
         {
@@ -150,6 +153,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // DELETE /api/ChildParentRelationships/{relationshipID}
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpDelete("{relationshipID}")]
         public async Task<IActionResult> Delete(
             Guid relationshipID)

@@ -1,29 +1,31 @@
 <template>
   <div class="flex h-screen bg-stone-50 antialiased text-stone-900" style="font-family: 'Inter','Segoe UI',sans-serif;">
-    
+
     <StaffSidebar />
 
     <!-- MAIN SECTION -->
     <div class="flex-1 flex flex-col overflow-hidden">
-      <StaffTopbar title="Doctor / Staff" breadcrumb="Aruga / Doctor &amp; Staff">
-        <button @click="showAddModal = true" class="bg-slate-900 text-white px-5 py-2.5 rounded-lg text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-2 shadow-sm">
-          <Plus class="w-4 h-4" /> ADD NEW EMPLOYEE
-        </button>
-      </StaffTopbar>
+      <StaffTopbar title="Doctor / Nurse" breadcrumb="Aruga / Healthcare Workers" />
 
       <main class="flex-1 p-8 overflow-y-auto custom-scrollbar">
         <div class="max-w-7xl mx-auto">
-          
+
+          <p class="mb-5 text-sm text-slate-500">
+            Healthcare workers who can see patients today. New accounts are created by the System Administrator in User Management.
+          </p>
+
           <!-- FILTERS & SEARCH -->
-          <div class="mb-6 flex justify-between items-center">
+          <div class="mb-6 flex justify-between items-center gap-4 flex-wrap">
             <div class="relative">
               <Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="text" placeholder="Search by name or PRC..." class="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none w-80 transition-all">
+              <input v-model="search" type="text" placeholder="Search by name or PRC..." class="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none w-80 transition-all">
             </div>
             <div class="flex gap-2">
-              <button class="px-4 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">All</button>
-              <button class="px-4 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Doctors</button>
-              <button class="px-4 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Nurses</button>
+              <button v-for="tab in tabs" :key="tab.key" @click="activeTab = tab.key"
+                class="px-4 py-2 text-xs font-bold border rounded-lg transition-colors"
+                :class="activeTab === tab.key ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'">
+                {{ tab.label }} <span class="opacity-70">({{ tab.count }})</span>
+              </button>
             </div>
           </div>
 
@@ -36,38 +38,42 @@
                   <th class="px-6 py-4">User Type</th>
                   <th class="px-6 py-4">Contact Number</th>
                   <th class="px-6 py-4">PRC License No.</th>
-                  <th class="px-6 py-4 text-right">Actions</th>
+                  <th class="px-6 py-4">Account</th>
+                  <th class="px-6 py-4">Last Sign-in</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
-                <tr v-for="staff in staffMembers" :key="staff.id" class="hover:bg-slate-50/50 transition-colors">
+                <tr v-for="staff in filtered" :key="staff.userID" class="hover:bg-slate-50/50 transition-colors">
                   <td class="px-6 py-4">
                     <div class="flex items-center gap-3">
                       <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-200">
-                        {{ staff.firstName[0] }}{{ staff.lastName[0] }}
+                        {{ (staff.firstName || '?')[0] }}{{ (staff.lastName || '')[0] }}
                       </div>
                       <div>
-                        <p class="font-bold text-slate-800">{{ staff.lastName }}, {{ staff.firstName }} {{ staff.middleName }}</p>
-                        <p class="text-[10px] text-slate-400 font-medium tracking-wide">EMP-{{ staff.id }}</p>
+                        <p class="font-bold text-slate-800">{{ staff.lastName }}, {{ staff.firstName }} {{ staff.middleName ? staff.middleName[0] + '.' : '' }}</p>
+                        <p class="text-[10px] text-slate-400 font-medium tracking-wide">{{ staff.email || staff.username }}</p>
                       </div>
                     </div>
                   </td>
                   <td class="px-6 py-4">
-                    <span :class="staff.type === 'Doctor' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'" 
+                    <span :class="staff.position === 'Doctor' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'"
                       class="px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase">
-                      {{ staff.type }}
+                      {{ staff.position }}
                     </span>
                   </td>
-                  <td class="px-6 py-4 text-slate-600 font-medium">
-                    {{ staff.contact }}
+                  <td class="px-6 py-4 text-slate-600 font-medium">{{ staff.contactNo || '—' }}</td>
+                  <td class="px-6 py-4">
+                    <code v-if="staff.prcNo" class="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded tracking-widest">{{ staff.prcNo }}</code>
+                    <span v-else class="text-slate-400">—</span>
                   </td>
                   <td class="px-6 py-4">
-                    <code class="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded tracking-widest">
-                      {{ staff.prcNo }}
-                    </code>
+                    <span class="text-xs font-semibold" :class="staff.status === 'Active' ? 'text-emerald-700' : 'text-slate-400'">{{ staff.status }}</span>
                   </td>
-                  <td class="px-6 py-4 text-right">
-                    <button class="p-2 text-slate-400 hover:text-slate-600 transition-colors"><MoreHorizontal class="w-5 h-5" /></button>
+                  <td class="px-6 py-4 text-slate-500 text-xs">{{ staff.lastLogin ? relativeTime(staff.lastLogin) : 'Never' }}</td>
+                </tr>
+                <tr v-if="filtered.length === 0">
+                  <td colspan="6" class="px-6 py-12 text-center text-sm" :class="loadError ? 'text-rose-500' : 'text-slate-400'">
+                    {{ loading ? 'Loading...' : (loadError || 'No healthcare workers match your search.') }}
                   </td>
                 </tr>
               </tbody>
@@ -75,76 +81,52 @@
           </div>
         </div>
       </main>
-
-      <!-- ADD EMPLOYEE MODAL (Simplified) -->
-      <div v-if="showAddModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
-          <div class="p-6 border-b border-slate-100 flex justify-between items-center">
-            <h3 class="font-bold text-slate-800">Add New Employee</h3>
-            <button @click="showAddModal = false" class="text-slate-400 hover:text-slate-600"><X class="w-5 h-5" /></button>
-          </div>
-          
-          <div class="p-6 space-y-4">
-            <div class="grid grid-cols-3 gap-3">
-              <div class="col-span-1">
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">First Name</label>
-                <input type="text" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-emerald-500 outline-none">
-              </div>
-              <div class="col-span-1">
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Middle Name</label>
-                <input type="text" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-emerald-500 outline-none">
-              </div>
-              <div class="col-span-1">
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Last Name</label>
-                <input type="text" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-emerald-500 outline-none">
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Contact No.</label>
-                <input type="text" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-emerald-500 outline-none">
-              </div>
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">User Type</label>
-                <select class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-emerald-500 outline-none appearance-none">
-                  <option>Doctor</option>
-                  <option>Nurse</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">PRC License No.</label>
-              <input type="text" placeholder="0000000" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-emerald-500 outline-none">
-            </div>
-          </div>
-
-          <div class="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
-             <button @click="showAddModal = false" class="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-all">CANCEL</button>
-             <button class="flex-1 py-2.5 text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-sm transition-all">SAVE EMPLOYEE</button>
-          </div>
-        </div>
-      </div>
-
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { Plus, Search, MoreHorizontal, X } from 'lucide-vue-next'
+import { ref, computed, onMounted } from 'vue'
+import axios from 'axios'
+import { Search } from 'lucide-vue-next'
 import StaffSidebar from './StaffSidebar.vue'
 import StaffTopbar from './StaffTopbar.vue'
+import { API_BASE, relativeTime } from '@/utils/format'
 
-const showAddModal = ref(false)
+// GET /api/Users?position=Doctor,Nurse — the Healthcare Worker directory.
+const staffMembers = ref([])
+const loading = ref(true)
+const loadError = ref('')
 
-// Mock Data for Staff
-const staffMembers = ref([
-  { id: '2024-001', firstName: 'Elena', middleName: 'M.', lastName: 'Rodriguez', type: 'Doctor', contact: '0917-555-0123', prcNo: '1234567' },
-  { id: '2024-002', firstName: 'Marcus', middleName: 'L.', lastName: 'Pineda', type: 'Nurse', contact: '0918-444-9876', prcNo: '7654321' },
-  { id: '2024-003', firstName: 'Sarah', middleName: 'G.', lastName: 'Concepcion', type: 'Doctor', contact: '0919-333-5566', prcNo: '2468135' },
+onMounted(async () => {
+  try {
+    const res = await axios.get(`${API_BASE}/Users`, { params: { position: 'Doctor,Nurse' } })
+    staffMembers.value = res.data
+  } catch (e) {
+    console.error('StaffDoctorNurse:', e)
+    loadError.value = 'Could not load healthcare workers. Check that the API is running.'
+  } finally {
+    loading.value = false
+  }
+})
+
+const search = ref('')
+const activeTab = ref('all')
+
+const tabs = computed(() => [
+  { key: 'all', label: 'All', count: staffMembers.value.length },
+  { key: 'Doctor', label: 'Doctors', count: staffMembers.value.filter(s => s.position === 'Doctor').length },
+  { key: 'Nurse', label: 'Nurses', count: staffMembers.value.filter(s => s.position === 'Nurse').length },
 ])
+
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return staffMembers.value.filter(s => {
+    if (activeTab.value !== 'all' && s.position !== activeTab.value) return false
+    if (!q) return true
+    return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) || (s.prcNo || '').toLowerCase().includes(q)
+  })
+})
 </script>
 
 <style scoped>

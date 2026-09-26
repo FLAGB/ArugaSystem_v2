@@ -22,6 +22,9 @@ namespace AndroidWebAPI.Data
         Task MarkCompletedAsync(Guid timelineId);
 
         Task RegenerateTimelineAsync(Guid childId);
+
+        // Recomputes every dose not yet given (after a birth-date correction)
+        Task RescheduleChildAsync(Guid childId);
         Task UpdateMissedVaccinationsAsync();
 
         Task<IEnumerable<VaccinationTimeline>> GetDueTodayAsync();

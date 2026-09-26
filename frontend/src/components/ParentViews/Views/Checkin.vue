@@ -31,17 +31,22 @@
               <p class="text-[11px] text-amber-700 font-bold">No children are linked to this account yet. Please contact the clinic to link a child before checking in.</p>
             </div>
 
-            <!-- ═══════════════ SUCCESS / READY FOR QUEUE STATE ═══════════════ -->
-            <div v-if="checkInConfirmed" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
+            <!-- ═══════════════ TODAY'S TICKET ═══════════════ -->
+            <div v-if="myStatus?.checkedIn" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
               <div class="text-center mb-6">
-                <div class="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-3xl mx-auto mb-3">✅</div>
-                <h2 class="text-xl font-bold text-slate-800">Checked In</h2>
-                <p v-if="myQueueNumber" class="text-2xl font-black text-emerald-600 mt-2">Queue #{{ String(myQueueNumber).padStart(3, '0') }}</p>
-                <p class="text-xs text-slate-400 mt-1">You're in the queue — please wait to be called.</p>
+                <div class="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-3xl mx-auto mb-3">
+                  {{ ticketIcon }}
+                </div>
+                <h2 class="text-xl font-bold text-slate-800">{{ ticketTitle }}</h2>
+                <p class="text-3xl font-black text-emerald-600 mt-2">Queue #{{ String(myStatus.myQueueNumber).padStart(3, '0') }}</p>
+                <p class="text-sm text-slate-500 mt-2">{{ ticketMessage }}</p>
+                <p v-if="myStatus.nowServingNumber && isWaiting" class="text-xs text-slate-400 mt-1">
+                  Now serving #{{ String(myStatus.nowServingNumber).padStart(3, '0') }}
+                </p>
               </div>
 
-              <div class="space-y-3 mb-6">
-                <div v-for="item in confirmedChildren" :key="item.child.childID"
+              <div class="space-y-3">
+                <div v-for="item in ticketChildren" :key="item.child.childID"
                      class="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
                   <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-xl shrink-0">
@@ -50,7 +55,7 @@
                     <div>
                       <p class="text-xs font-bold text-slate-800">{{ item.child.firstName }} {{ item.child.lastName }}</p>
                       <p v-if="item.nextDose" class="text-[10px] text-slate-400 mt-0.5">
-                        Next: {{ item.nextDose.name }} · Dose {{ item.nextDose.doseNumber }} · {{ formatDisplayDate(item.nextDose.scheduledDate) }}
+                        Due: {{ item.nextDose.name }} · Dose {{ item.nextDose.doseNumber }} · {{ formatDisplayDate(item.nextDose.scheduledDate) }}
                       </p>
                       <p v-else class="text-[10px] text-slate-400 mt-0.5">No pending doses on file</p>
                     </div>
@@ -58,36 +63,94 @@
                 </div>
               </div>
 
-              <button
-                @click="resetCheckIn"
-                class="w-full px-10 py-3.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium text-sm transition-all"
-              >
-                Start a New Check-In
-              </button>
+              <p class="text-[10px] text-slate-400 text-center mt-6">This page updates by itself. Keep it open while you wait.</p>
             </div>
 
-            <!-- ═══════════════ DEMO CHECK-IN (QR step skipped) ═══════════════ -->
-            <div v-else class="bg-slate-800 rounded-xl p-10 text-center text-white relative overflow-hidden shadow-2xl">
+            <!-- ═══════════════ CHECK IN ═══════════════ -->
+            <div v-else-if="!statusLoading" class="bg-slate-800 rounded-xl p-8 sm:p-10 text-center text-white relative overflow-hidden shadow-2xl">
               <div class="absolute inset-0 opacity-5" style="background-image: radial-gradient(circle, #10b981 1px, transparent 1px); background-size: 24px 24px;"></div>
-              <div class="relative">
+              <div class="relative max-w-md mx-auto">
                 <h2 class="text-2xl font-bold mb-2">Check In</h2>
-                <p class="text-white/50 text-xs mb-8">Tap below to check in your child for today's visit</p>
 
-                <div class="w-24 h-24 mx-auto mb-8 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center text-5xl">
-                  🩺
-                </div>
+                <!-- Clinic closed / check-in not open right now -->
+                <template v-if="clinic && !clinic.checkInOpenNow">
+                  <div class="w-20 h-20 mx-auto my-6 rounded-full bg-white/5 border-2 border-white/20 flex items-center justify-center text-4xl">🕒</div>
+                  <p class="text-white/80 text-sm">{{ closedMessage }}</p>
+                </template>
 
-                <button
-                  @click="startDemoCheckIn"
-                  :disabled="childrenLoading || children.length === 0"
-                  class="px-10 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-all shadow-lg"
-                >
-                  Check In Now
-                </button>
+                <!-- QR check-in -->
+                <template v-else-if="qrRequired">
+                  <p class="text-white/60 text-xs mb-6">
+                    When you arrive at Leveriza Health Center, scan the QR code posted at the entrance,
+                    or type the 6-letter code printed under it.
+                  </p>
 
-                <p v-if="qrError" class="text-red-300 text-xs font-bold mt-3">{{ qrError }}</p>
+                  <div v-show="scanning" class="mx-auto mb-4 w-full max-w-xs overflow-hidden rounded-xl border-2 border-emerald-500 bg-black">
+                    <div id="checkin-qr-reader" class="w-full"></div>
+                  </div>
 
-                <p class="text-white/30 text-[10px] font-medium mt-6">Check-in is only available during clinic hours · Mon, Wed, Fri · 8:00 AM – 12:00 PM</p>
+                  <div v-if="!scanning" class="w-24 h-24 mx-auto mb-6 rounded-2xl bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center text-5xl">
+                    📷
+                  </div>
+
+                  <button
+                    v-if="!scanning"
+                    @click="startScanner"
+                    :disabled="childrenLoading || children.length === 0 || validating"
+                    class="w-full px-10 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-all shadow-lg"
+                  >
+                    Scan the Clinic QR Code
+                  </button>
+                  <button
+                    v-else
+                    @click="stopScanner"
+                    class="w-full px-10 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium text-sm transition-all"
+                  >
+                    Stop Camera
+                  </button>
+
+                  <div class="flex items-center gap-3 my-5 text-white/30 text-[10px] font-bold uppercase">
+                    <span class="h-px flex-1 bg-white/10"></span> or <span class="h-px flex-1 bg-white/10"></span>
+                  </div>
+
+                  <form class="flex gap-2" @submit.prevent="useTypedCode">
+                    <input
+                      v-model="typedCode"
+                      maxlength="12"
+                      placeholder="Code under the QR"
+                      autocapitalize="characters"
+                      class="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/20 px-4 py-3 text-center font-bold tracking-[0.3em] uppercase placeholder:tracking-normal placeholder:font-normal placeholder:text-white/40 focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      type="submit"
+                      :disabled="!typedCode.trim() || validating || children.length === 0"
+                      class="px-5 rounded-lg bg-white text-slate-800 text-sm font-bold disabled:opacity-40"
+                    >
+                      {{ validating ? '…' : 'Go' }}
+                    </button>
+                  </form>
+                </template>
+
+                <!-- QR switched off by the clinic -->
+                <template v-else>
+                  <p class="text-white/50 text-xs mb-8">Tap below to check in your child for today's visit.</p>
+                  <div class="w-24 h-24 mx-auto mb-8 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center text-5xl">
+                    🩺
+                  </div>
+                  <button
+                    @click="openChildSelection"
+                    :disabled="childrenLoading || children.length === 0"
+                    class="px-10 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-all shadow-lg"
+                  >
+                    Check In Now
+                  </button>
+                </template>
+
+                <p v-if="qrError" class="text-red-300 text-xs font-bold mt-4">{{ qrError }}</p>
+
+                <p class="text-white/30 text-[10px] font-medium mt-6">
+                  Clinic hours: {{ clinic?.hoursText || '—' }}<span v-if="clinic?.checkInUntil"> · Check-in until {{ clinic.checkInUntil }} today</span>
+                </p>
               </div>
             </div>
           </div>
@@ -154,9 +217,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { addDays, format, isMonday, isWednesday, isFriday } from 'date-fns'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { format } from 'date-fns'
+import { Html5Qrcode } from 'html5-qrcode'
 
 import HeaderNav from '../Components/Headernav.vue'
 import ChildSidebar from '../Components/Childsidebar.vue'
@@ -165,8 +229,10 @@ import NotificationPanel from '../Components/Notificationpanel.vue'
 
 import { getAccount, logout as authLogout } from '@/utils/auth'
 import api from '../Composables/api.js'
+import { fetchChildSchedule, buildSchedule } from '../Composables/childSchedule.js'
 
 const router = useRouter()
+const route = useRoute()
 
 // =====================================================
 // SESSION / PARENT (same pattern as ParentOverview.vue)
@@ -304,23 +370,154 @@ const showProfile = ref(false)
 const showNotifications = ref(false)
 
 // =====================================================
-// DEMO CHECK-IN (QR scan step skipped for demo purposes —
-// TODO before real deployment: bring back QR verification,
-// e.g. await api.get(`/Queue/validate-qr?code=...`))
+// CLINIC HOURS + QR SETTING
+// =====================================================
+
+const clinic = ref(null)        // GET /ClinicOperatingSchedule/today
+const qrRequired = ref(true)    // GET /QueueQRCode/settings
+
+const closedMessage = computed(() => {
+  const c = clinic.value
+  if (!c) return ''
+  if (!c.openToday) {
+    return `The clinic is closed today${c.reason ? ` (${c.reason})` : ''}. The next clinic day is ${c.nextOpenDay}.`
+  }
+  return `Check-in today is from ${c.opensAt} until ${c.checkInUntil}. The next clinic day is ${c.nextOpenDay}.`
+})
+
+async function loadClinicInfo() {
+  try {
+    const [today, settings] = await Promise.all([
+      api.get('/ClinicOperatingSchedule/today'),
+      api.get('/QueueQRCode/settings'),
+    ])
+    clinic.value = today.data
+    qrRequired.value = !!settings.data?.isEnabled
+  } catch (err) {
+    console.error('Failed to load clinic hours:', err)
+  }
+}
+
+// =====================================================
+// TODAY'S TICKET (already checked in?)
+// =====================================================
+
+const myStatus = ref(null)
+const statusLoading = ref(true)
+const ticketChildren = ref([])
+let pollTimer = null
+
+const isWaiting = computed(() => (myStatus.value?.myStatus || '') === 'Waiting')
+const isAtStation = computed(() => /inprogress/i.test((myStatus.value?.myStatus || '').replace(/\s+/g, '')))
+const isDone = computed(() => (myStatus.value?.myStatus || '') === 'Completed')
+
+const ticketIcon = computed(() => (isDone.value ? '🎉' : isAtStation.value ? '🩺' : '✅'))
+const ticketTitle = computed(() => (isDone.value ? 'Visit Completed' : isAtStation.value ? 'It’s Your Turn' : 'You’re Checked In'))
+const ticketMessage = computed(() => {
+  const s = myStatus.value
+  if (!s) return ''
+  if (isDone.value) return 'Thank you for visiting Leveriza Health Center! See the Records page for today’s vaccines.'
+  if (isAtStation.value) {
+    return `Please go to ${s.stationName || 'the station you were called to'}${s.workerName ? ` (${s.workerName})` : ''}.`
+  }
+  if (s.positionInLine === 1) return 'You’re next! Please stay nearby.'
+  if (s.positionInLine) return `There ${s.positionInLine - 1 === 1 ? 'is 1 family' : `are ${s.positionInLine - 1} families`} ahead of you. Please wait to be called.`
+  return 'Please wait to be called.'
+})
+
+async function loadMyStatus() {
+  if (!parentData.value?.parentID) return
+  try {
+    const res = await api.get(`/Queue/my-status/${parentData.value.parentID}`)
+    const firstLoad = !myStatus.value?.checkedIn && res.data?.checkedIn
+    myStatus.value = res.data
+    if (firstLoad || (res.data?.checkedIn && ticketChildren.value.length === 0)) await loadTicketChildren()
+  } catch (err) {
+    console.error('Failed to load queue status:', err)
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+async function loadTicketChildren() {
+  const ids = (myStatus.value?.childIDs || []).map(String).map(s => s.toLowerCase())
+  const list = children.value.filter(c => ids.includes(String(c.childID).toLowerCase()))
+  const summaries = []
+  for (const child of list) {
+    const upcoming = await fetchUpcomingDoses(child.childID)
+    summaries.push({ child, nextDose: upcoming[0] ?? null })
+  }
+  ticketChildren.value = summaries
+}
+
+// =====================================================
+// QR SCAN / TYPED CODE
 // =====================================================
 
 const qrError = ref('')
+const typedCode = ref('')
+const validating = ref(false)
+const scanning = ref(false)
+const validCode = ref('')     // today's code, once the clinic QR checked out
+let scanner = null
 
-function startDemoCheckIn() {
+// The QR holds a link like …/ParentCheckin?code=XYZ; accept that or a bare code
+function extractCode(text) {
+  const raw = String(text || '').trim()
+  const m = raw.match(/[?&]code=([^&#]+)/i)
+  return (m ? decodeURIComponent(m[1]) : raw).replace(/[\s-]/g, '')
+}
+
+async function validateCode(raw) {
+  const code = extractCode(raw)
+  if (!code) return
   qrError.value = ''
-
-  if (children.value.length === 0) {
-    qrError.value = 'No children are linked to this account.'
-    return
+  validating.value = true
+  try {
+    await api.get('/QueueQRCode/validate', { params: { code } })
+    validCode.value = code
+    openChildSelection()
+  } catch (err) {
+    qrError.value = err.response?.data?.message || 'Could not check the code. Please try again.'
+  } finally {
+    validating.value = false
   }
+}
 
-  selectedChildren.value = []
-  showChildSelection.value = true
+function useTypedCode() {
+  validateCode(typedCode.value)
+}
+
+async function startScanner() {
+  qrError.value = ''
+  scanning.value = true
+  await nextTick()
+  try {
+    scanner = new Html5Qrcode('checkin-qr-reader')
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      async text => {
+        await stopScanner()
+        validateCode(text)
+      },
+      () => {} // "no QR in this frame" — ignore
+    )
+  } catch (err) {
+    console.error('Camera error:', err)
+    scanning.value = false
+    scanner = null
+    qrError.value = 'The camera couldn’t be opened. Allow camera access, or type the code printed under the QR instead.'
+  }
+}
+
+async function stopScanner() {
+  try {
+    if (scanner?.isScanning) await scanner.stop()
+    scanner?.clear()
+  } catch { /* already stopped */ }
+  scanner = null
+  scanning.value = false
 }
 
 // =====================================================
@@ -330,8 +527,17 @@ function startDemoCheckIn() {
 const showChildSelection = ref(false)
 const selectedChildren = ref([])
 const confirmLoading = ref(false)
-const checkInConfirmed = ref(false)
-const confirmedChildren = ref([])
+
+function openChildSelection() {
+  qrError.value = ''
+  if (children.value.length === 0) {
+    qrError.value = 'No children are linked to this account.'
+    return
+  }
+  selectedChildren.value = children.value.length === 1 ? [children.value[0]] : []
+  checkInError.value = ''
+  showChildSelection.value = true
+}
 
 function toggleChildSelection(child) {
   const index = selectedChildren.value.findIndex(c => c.childID === child.childID)
@@ -357,101 +563,31 @@ function cancelChildSelection() {
 // children that were actually selected, after confirm.
 // =====================================================
 
-const VACCINE_MASTER = [
-  { vaccineId: 1, name: 'BCG Vaccine',                      doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 2, name: 'Hepatitis B Vaccine',              doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 3, name: 'Pentavalent (DPT-Hep B-HIB)',      doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 4, name: 'Oral Polio Vaccine (OPV)',         doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 5, name: 'Inactivated Polio Vaccine (IPV)',  doses: [{ n: 1, gap: 105 }, { n: 2, gap: 165}] },
-  { vaccineId: 6, name: 'Pneumococcal Conj. Vaccine (PCV)', doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 7, name: 'MMR Vaccine',                      doses: [{ n: 1, gap: 270 }, { n: 2, gap: 90 }] },
-]
-
-function snapToClinicDay(date) {
-  let d = new Date(date)
-  while (!(isMonday(d) || isWednesday(d) || isFriday(d))) d = addDays(d, 1)
-  return d
-}
-
 function formatDisplayDate(date) {
   if (!date) return '—'
   try { return format(new Date(date), 'MMM d, yyyy') } catch { return '—' }
 }
 
-async function fetchVaccinationRecords(childId) {
+// Next due doses for a child, from the backend timeline (shared with the
+// other parent pages via Composables/childSchedule.js).
+async function fetchUpcomingDoses(childId) {
   if (!childId) return []
   try {
-    const res = await api.get(`/VaccinationRecords/child/${childId}`)
-    return res.data ?? []
+    const { timeline, records } = await fetchChildSchedule(childId)
+    return buildSchedule(timeline, records)
+      .filter(d => !d.isCompleted)
+      .sort((a, b) => a.scheduledDate - b.scheduledDate)
   } catch (err) {
-    console.error('fetchVaccinationRecords error:', err)
+    console.error('fetchUpcomingDoses error:', err)
     return []
   }
 }
 
-// Pure function version of the old `computedVaccineList` — takes a
-// specific child + their records instead of relying on a single
-// page-level `selectedChild`, so it works for any number of children.
-function computeUpcomingDosesFor(child, records) {
-  if (!child?.birthDate) return []
-  const birth = new Date(child.birthDate)
-  const result = []
-
-  for (const vaccine of VACCINE_MASTER) {
-    let prevActualDate = null
-    let prevOriginalDate = null
-
-    for (const dose of vaccine.doses) {
-      const record = records.find(r =>
-        Number(r.vaccineID ?? r.vaccineId) === vaccine.vaccineId &&
-        Number(r.doseNumber ?? r.DoseNumber) === dose.n &&
-        r.status === 'Completed' &&
-        r.dateAdministered
-      )
-
-      const originalDueDate = dose.n === 1
-        ? snapToClinicDay(addDays(birth, dose.gap))
-        : snapToClinicDay(addDays(prevOriginalDate ?? birth, dose.gap))
-
-      let scheduledDate
-      if (record) {
-        scheduledDate = new Date(record.dateAdministered)
-      } else if (dose.n === 1) {
-        scheduledDate = snapToClinicDay(addDays(birth, dose.gap))
-      } else {
-        const base = prevActualDate ?? prevOriginalDate ?? birth
-        scheduledDate = snapToClinicDay(addDays(base, dose.gap))
-      }
-
-      const administeredDate = record ? new Date(record.dateAdministered) : null
-
-      prevOriginalDate = originalDueDate
-      prevActualDate = administeredDate ?? null
-
-      result.push({
-        doseId: `${vaccine.vaccineId}-${dose.n}`,
-        vaccineId: vaccine.vaccineId,
-        name: vaccine.name,
-        doseNumber: dose.n,
-        scheduledDate,
-        isCompleted: !!record,
-      })
-    }
-  }
-
-  return result
-    .filter(d => !d.isCompleted)
-    .sort((a, b) => a.scheduledDate - b.scheduledDate)
-}
-
 // =====================================================
-// CONFIRM CHILDREN → submit to the real Queue check-in
-// endpoint (POST /api/Queue), then show the resulting
-// queue number.
+// CONFIRM CHILDREN → POST /api/Queue with today's code
 // =====================================================
 
 const checkInError = ref('')
-const myQueueNumber = ref(null)
 
 async function confirmChildren() {
   if (selectedChildren.value.length === 0) return
@@ -460,47 +596,28 @@ async function confirmChildren() {
   checkInError.value = ''
 
   try {
-    const summaries = []
-
-    for (const child of selectedChildren.value) {
-      const records = await fetchVaccinationRecords(child.childID)
-      const upcoming = computeUpcomingDosesFor(child, records)
-      summaries.push({ child, nextDose: upcoming[0] ?? null })
+    await api.post('/Queue', {
+      ParentID: parentData.value.parentID,
+      ChildIDs: selectedChildren.value.map(child => child.childID),
+      QrCode: validCode.value || null,
+    })
+  } catch (err) {
+    // 409 = already checked in today; just show the existing ticket
+    if (err.response?.status !== 409) {
+      console.error('Check-in failed:', err)
+      checkInError.value = err.response?.data?.message || 'Could not check in — please try again.'
+      confirmLoading.value = false
+      return
     }
-
-    try {
-      const response = await api.post('/Queue', {
-        ParentID: parentData.value.parentID,
-        ChildIDs: selectedChildren.value.map(child => child.childID),
-      })
-      myQueueNumber.value = response.data.queueNumber ?? response.data.QueueNumber ?? null
-    } catch (err) {
-      if (err.response?.status === 409) {
-        // Already checked in today — not an error, just show their existing ticket.
-        myQueueNumber.value = err.response.data?.queueNumber ?? err.response.data?.QueueNumber ?? null
-      } else {
-        console.error('Check-in failed:', err)
-        checkInError.value = err.response?.data?.message || 'Could not check in — please try again.'
-        return
-      }
-    }
-
-    confirmedChildren.value = summaries
-    showChildSelection.value = false
-    checkInConfirmed.value = true
-  } finally {
-    confirmLoading.value = false
   }
-}
 
-function resetCheckIn() {
-  qrError.value = ''
-  selectedChildren.value = []
-  confirmedChildren.value = []
-  checkInConfirmed.value = false
   showChildSelection.value = false
-  checkInError.value = ''
-  myQueueNumber.value = null
+  typedCode.value = ''
+  confirmLoading.value = false
+  // Drop ?code= from the address bar so a refresh doesn't re-submit it
+  if (route.query.code) router.replace({ path: route.path })
+  await loadMyStatus()
+  await loadTicketChildren()
 }
 
 // =====================================================
@@ -511,7 +628,22 @@ onMounted(async () => {
   const validSession = loadParentSession()
   if (!validSession) return
 
-  await fetchChildren()
-  await fetchUnreadCount()
+  await Promise.all([fetchChildren(), loadClinicInfo()])
+  await loadMyStatus()
+  fetchUnreadCount()
+
+  // Opened by scanning the clinic QR with the phone camera
+  if (!myStatus.value?.checkedIn && route.query.code) {
+    validateCode(String(route.query.code))
+  }
+
+  pollTimer = setInterval(() => {
+    if (myStatus.value?.checkedIn && !isDone.value) loadMyStatus()
+  }, 10000)
+})
+
+onBeforeUnmount(() => {
+  clearInterval(pollTimer)
+  stopScanner()
 })
 </script>

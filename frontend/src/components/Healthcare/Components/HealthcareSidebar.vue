@@ -1,14 +1,14 @@
 <!--
-  DoctorSidebar.vue
+  HealthcareSidebar.vue
   ==================
-  Single source of truth for the doctor-side left nav. Every Doctor*.vue
+  Single source of truth for the Healthcare Worker (Doctor / Nurse) left nav. Every Healthcare*.vue
   page should import and render this instead of hand-rolling its own
-  <aside> + navItems array — before this, all 7 Doctor pages carried an
+  <aside> + navItems array — before this, all 7 pages carried an
   identical, independently-maintained copy of both, so any nav change
   (like the Leveriza logo swap) had to be hand-applied 7 times.
 
   To add/remove/reorder a nav item in the future, edit NAV_ITEMS below —
-  it updates on every Doctor page at once.
+  it updates on every Healthcare page at once.
 -->
 <template>
   <aside class="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0">
@@ -57,13 +57,13 @@ import {
 const router = useRouter()
 
 const navItems = [
-  { id: 'home',     label: 'Home',                path: '/doctor/home',     icon: Home       },
-  { id: 'queue',    label: 'Queue',               path: '/doctor/queue',    icon: ListChecks },
-  { id: 'patients', label: 'Patients (Children)', path: '/doctor/patients', icon: Users      },
-  { id: 'calendar', label: 'Calendar',            path: '/doctor/calendar', icon: Calendar   },
-  { id: 'records',  label: 'Vaccination Records', path: '/doctor/records',  icon: Syringe    },
-  { id: 'reports',  label: 'Reports',             path: '/doctor/reports', icon: FileText    },
-  { id: 'account',  label: 'My Account',          path: '/doctor/account', icon: Settings    },
+  { id: 'home',     label: 'Home',                path: '/healthcare/home',     icon: Home       },
+  { id: 'queue',    label: 'Queue',               path: '/healthcare/queue',    icon: ListChecks },
+  { id: 'patients', label: 'Patients (Children)', path: '/healthcare/patients', icon: Users      },
+  { id: 'calendar', label: 'Calendar',            path: '/healthcare/calendar', icon: Calendar   },
+  { id: 'records',  label: 'Vaccination Records', path: '/healthcare/vaccination-records',  icon: Syringe    },
+  { id: 'reports',  label: 'Reports',             path: '/healthcare/reports', icon: FileText    },
+  { id: 'account',  label: 'My Account',          path: '/healthcare/accounts', icon: Settings    },
 ]
 
 function logout() {

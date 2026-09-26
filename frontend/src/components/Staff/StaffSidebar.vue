@@ -76,7 +76,7 @@ import { getAccount, logout } from "@/utils/auth";
 import logoIcon from "@/assets/logo-icon.svg";
 import {
   Home, Stethoscope, Syringe, Package, CalendarDays,
-  ClipboardList, BarChart2, Contact, LogOut, ChevronLeft, ChevronRight,
+  ClipboardList, BarChart2, Contact, LogOut, ChevronLeft, ChevronRight, QrCode,
 } from "lucide-vue-next";
 
 const router = useRouter();
@@ -94,11 +94,12 @@ const collapsed = ref(false);
 const NAV_ITEMS = [
   { icon: Home,          label: "Dashboard",       path: "/staff/dashboard" },
   { icon: Contact,       label: "Patient Records", path: "/staff/patient-records" },
-  { icon: Stethoscope,   label: "Doctor / Staff",  path: "/staff/doctor-staff" },
+  { icon: Stethoscope,   label: "Doctor / Nurse",  path: "/staff/doctor-staff" },
   { icon: Syringe,       label: "Vaccine Schedule",path: "/staff/vaccine-schedule" },
   { icon: Package,       label: "Inventory",       path: "/staff/vaccine-inventory" },
   { icon: CalendarDays,  label: "Calendar",        path: "/staff/calendar" },
   { icon: ClipboardList, label: "Queue Management",path: "/staff/queue-management" },
+  { icon: QrCode,        label: "Check-in QR",     path: "/staff/checkin-qr" },
   { icon: BarChart2,     label: "Clinic Reports",  path: "/staff/reports" },
 ];
 

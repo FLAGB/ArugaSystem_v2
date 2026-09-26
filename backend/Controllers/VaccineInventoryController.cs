@@ -9,16 +9,21 @@ namespace AndroidWebAPI.Controllers
     public class VaccineInventoryController : ControllerBase
     {
         private readonly VaccineInventoryRepository _repository;
+        private readonly AndroidWebAPI.Services.AuditService _audit;
 
-        public VaccineInventoryController(VaccineInventoryRepository repository)
+        public VaccineInventoryController(
+            VaccineInventoryRepository repository,
+            AndroidWebAPI.Services.AuditService audit)
         {
             _repository = repository;
+            _audit = audit;
         }
 
         // ========================================
         // GET ALL
         // GET: api/VaccineInventory
         // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -30,6 +35,7 @@ namespace AndroidWebAPI.Controllers
         // GET BY ID
         // GET: api/VaccineInventory/1
         // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
@@ -45,6 +51,7 @@ namespace AndroidWebAPI.Controllers
         // GET BY VACCINE
         // GET: api/VaccineInventory/vaccine/1
         // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("vaccine/{vaccineId}")]
         public async Task<IActionResult> GetByVaccine(int vaccineId)
         {
@@ -56,13 +63,26 @@ namespace AndroidWebAPI.Controllers
         // CREATE
         // POST: api/VaccineInventory
         // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] VaccineInventory inventory)
+        public async Task<IActionResult> Create(
+            [FromBody] VaccineInventory inventory,
+            [FromServices] AppDbContext context,
+            [FromServices] AndroidWebAPI.Services.ParentNotifier notifier)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
             var created = await _repository.CreateAsync(inventory);
+
+            await _audit.LogAsync("Inventory", "Receive Stock",
+                $"Batch {created.LotNumber}",
+                $"Received a new vaccine batch of {created.InitialQuantity} dose(s).",
+                newValue: $"Remaining: {created.CurrentQuantity}");
+
+            // Parents who were told this vaccine was out of stock hear right
+            // away that it's back (instead of waiting for the next morning).
+            await AndroidWebAPI.Services.StockNotices.RunAsync(context, notifier, created.VaccineID);
 
             return CreatedAtAction(
                 nameof(Get),
@@ -71,9 +91,48 @@ namespace AndroidWebAPI.Controllers
         }
 
         // ========================================
+        // WEEKLY STOCK CHECK
+        // GET: api/VaccineInventory/stock-check
+        // Per vaccine: on hand, due this week / two weeks, expiring soon,
+        // re-stock yes/no and a suggested order (see Services/StockCheck.cs).
+        // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
+        [HttpGet("stock-check")]
+        public async Task<IActionResult> GetStockCheck([FromServices] AppDbContext context, [FromServices] IConfiguration config)
+        {
+            var lines = await AndroidWebAPI.Services.StockCheck.BuildAsync(context);
+            return Ok(new
+            {
+                checkDay = AndroidWebAPI.Services.StockCheck.CheckDay(config).ToString(),
+                generatedAt = DateTime.Now,
+                lines,
+            });
+        }
+
+        // POST: api/VaccineInventory/stock-check/send
+        // Sends the check to the Admission Staff and Administrator now
+        // (it also goes out by itself every check day at 8:00 AM).
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
+        [HttpPost("stock-check/send")]
+        public async Task<IActionResult> SendStockCheck(
+            [FromServices] AppDbContext context,
+            [FromServices] AndroidWebAPI.Services.MessageSender sender)
+        {
+            int sent = await AndroidWebAPI.Services.StockCheck.SendAsync(context, sender);
+            return Ok(new
+            {
+                sent,
+                message = sent == 0
+                    ? "Today's stock check was already sent."
+                    : $"Stock check sent to {sent} staff/admin account(s).",
+            });
+        }
+
+        // ========================================
         // UPDATE
         // PUT: api/VaccineInventory/1
         // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] VaccineInventory inventory)
         {
@@ -87,6 +146,12 @@ namespace AndroidWebAPI.Controllers
 
             var updated = await _repository.UpdateAsync(inventory);
 
+            await _audit.LogAsync("Inventory", "Adjust Inventory",
+                $"Batch {inventory.LotNumber}",
+                "Updated vaccine batch details.",
+                oldValue: $"Remaining: {existing.CurrentQuantity}, Active: {existing.Status}",
+                newValue: $"Remaining: {inventory.CurrentQuantity}, Active: {inventory.Status}");
+
             return Ok(updated);
         }
 
@@ -94,6 +159,7 @@ namespace AndroidWebAPI.Controllers
         // DELETE
         // DELETE: api/VaccineInventory/1
         // ========================================
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
@@ -101,6 +167,8 @@ namespace AndroidWebAPI.Controllers
 
             if (!success)
                 return NotFound();
+
+            await _audit.LogAsync("Inventory", "Delete", $"Inventory #{id}", "Deleted a vaccine batch record.");
 
             return Ok(new
             {

@@ -58,6 +58,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // POST: api/ClinicScheduleExceptions
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpPost]
         public async Task<ActionResult<ClinicScheduleException>> CreateException(
             ClinicScheduleExceptionDto dto)
@@ -97,6 +98,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // PUT: api/ClinicScheduleExceptions/5
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateException(
             int id,
@@ -122,6 +124,7 @@ namespace AndroidWebAPI.Controllers
         }
 
         // DELETE: api/ClinicScheduleExceptions/5
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteException(int id)
         {

@@ -3,6 +3,7 @@ import axios from "axios"
 import { ref, computed, onMounted } from "vue"
 import AppSidebar from "./Components/AppSidebar.vue"
 import AppHeader from "./Components/AppHeader.vue"
+import { downloadCSV, toISODate } from "@/utils/format"
 
 /* ------------------------------- API config ------------------------------- */
 const api = "http://localhost:57147/api/Vaccines"
@@ -225,6 +226,17 @@ const filteredVaccines = computed(() => {
   })
 })
 
+/* Export — the currently filtered list, one row per vaccine */
+const exportVaccines = () => {
+  downloadCSV(`vaccines-${toISODate()}.csv`, [
+    ["Vaccine", "Abbreviation", "Target Disease", "Recommended Age", "Age Category", "Doses", "Route", "Status"],
+    ...filteredVaccines.value.map(v => [
+      v.vaccineName, v.abbreviation, v.targetDisease, v.recommendedAge, v.ageCategory,
+      getDoses(v.vaccineID).length || v.numberOfRequiredDoses, v.administrationRoute, v.status ? "Active" : "Inactive",
+    ]),
+  ])
+}
+
 /* -------------------------------- Summary ---------------------------------- */
 const summary = computed(() => ({
   total: vaccines.value.length,
@@ -245,6 +257,20 @@ async function setStatus(vaccine, activate) {
   await axios.put(`${api}/${vaccine.vaccineID}`, updated)
   closeMenu()
   load()
+}
+
+// Only unused vaccines can be deleted; the backend explains when one is
+// already in children's records (deactivate those instead).
+async function remove(vaccineID) {
+  closeMenu()
+  const vaccine = vaccines.value.find(v => v.vaccineID === vaccineID)
+  if (!confirm(`Delete ${vaccine?.vaccineName || 'this vaccine'}? This can't be undone.`)) return
+  try {
+    await axios.delete(`${api}/${vaccineID}`)
+    await Promise.all([load(), loadAllDoses()])
+  } catch (err) {
+    alert(err.response?.data?.message || 'Could not delete this vaccine.')
+  }
 }
 
 /* -------------------------------- Details drawer ---------------------------- */
@@ -624,7 +650,7 @@ async function save() {
             </select>
 
             <div class="flex items-center gap-2 shrink-0">
-              <button class="text-sm font-semibold px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+              <button @click="exportVaccines" class="text-sm font-semibold px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
                 Export
               </button>
               <button

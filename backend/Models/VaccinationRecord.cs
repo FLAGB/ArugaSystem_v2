@@ -33,12 +33,6 @@ namespace AndroidWebAPI.Models
 
         public string? NurseObservation { get; set; }
 
-        public string? DoctorDiagnosis { get; set; }
-
-        public Guid? DoctorDiagnosedByUserID { get; set; }
-
-        public DateTime? DoctorDiagnosedAt { get; set; }
-
         // Completed / Cancelled / Deferred
         public string Status { get; set; } = "Completed";
 
@@ -64,8 +58,5 @@ namespace AndroidWebAPI.Models
 
         [ForeignKey(nameof(AdministeredByUserID))]
         public virtual User? AdministeredBy { get; set; }
-
-        [ForeignKey(nameof(DoctorDiagnosedByUserID))]
-        public virtual User? DoctorDiagnosedBy { get; set; }
     }
 }

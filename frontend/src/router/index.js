@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { isLoggedIn, getRole, getUserType } from '@/utils/auth'
+import { isLoggedIn, getRole } from '@/utils/auth'
 
 // ── Login / Change Password ─────────────────────────────────
 
@@ -17,22 +17,11 @@ import ParentRecords from '@/components/ParentViews/Views/Record.vue'
 // ── Staff pages (formerly split across Admin/ and Staff/) ────
 
 import StaffCalendar from '@/components/Staff/StaffCalendar.vue'
-import StaffChildRecord from '@/components/Staff/StaffChildRecord.vue'
 import StaffDoctorNurse from '@/components/Staff/StaffDoctorNurse.vue'
-import StaffParentRecord from '@/components/Staff/StaffParentRecord.vue'
 import StaffReport from '@/components/Staff/StaffReport.vue'
 import StaffVaccineInventory from '@/components/Staff/StaffVaccineInventory.vue'
 import StaffQueueManagement from '@/components/Staff/StaffQueueManagement.vue'
-
-// ── Healthcare ──────────────────────────────────────────────
-
-import DoctorHomepage from '@/components/Doctor/Nurse/DoctorHomepage.vue'
-import DoctorPatients from '@/components/Doctor/Nurse/DoctorPatients.vue'
-import DoctorCalendar from '@/components/Doctor/Nurse/DoctorCalendar.vue'
-import DoctorVaccinationRecords from '@/components/Doctor/Nurse/DoctorVaccinationRecords.vue'
-import DoctorReports from '@/components/Doctor/Nurse/DoctorReports.vue'
-import DoctorAccount from '@/components/Doctor/Nurse/DoctorAccount.vue'
-import DoctorQueue from '@/components/Doctor/Nurse/DoctorQueue.vue'
+import StaffCheckinQR from '@/components/Staff/StaffCheckinQR.vue'
 
 // ── System Admin ────────────────────────────────────────────
 
@@ -47,6 +36,7 @@ import SystemAuditlogs from '@/components/SystemAdmin/SysAd-Auditlogs.vue'
 import TestAPI from '@/components/SystemAdmin/TestAPI.vue'
 import VaccineSchedule from '@/components/SystemAdmin/VaccineSchedule.vue'
 import SystemOperatingHours from '@/components/SystemAdmin/SysAd-Operating_hours.vue'
+import SystemRooms from '@/components/SystemAdmin/SysAd-Rooms.vue'
 
 // ── Staff ────────────────────────────────────────────────────
 
@@ -55,7 +45,7 @@ import StaffAccountSettings from '@/components/Staff/StaffAccountSettings.vue'
 import StaffPatientRecords from '@/components/Staff/StaffPatientRecords.vue'
 import StaffVaccineSchedule from '@/components/Staff/StaffVaccineSchedule.vue'
 
-// ── Healthcare ──────────────────────────────────────────────
+// ── Healthcare Worker (Doctor & Nurse share one portal) ─────
 
 import HealthCareHome from '@/components/Healthcare/HealthcareHome.vue'
 import HealthCareQueue from '@/components/Healthcare/HealthcareQueue.vue'
@@ -65,13 +55,10 @@ import HealthcareReports from '@/components/Healthcare/HealthcareReports.vue'
 import HealthcareAccounts from '@/components/Healthcare/HealthcareAccounts.vue'
 import HealthcareVaccinationRecords from '@/components/Healthcare/HealthcareVaccinationRecords.vue'
 import HealthcareVaccination from '@/components/Healthcare/HealthcareVaccination.vue'
-import Registration from '@/components/Login/Registration.vue'
+import VaccinationCard from '@/components/Shared/VaccinationCard.vue'
 
 
 const routes = [
-
-  //Registration
-{path: '/registration', component: Registration},
   // ── Login ──────────────────────────────────────────────────
 
   {
@@ -207,78 +194,17 @@ const routes = [
   },
 
 
-  // ── Old Doctor routes ──────────────────────────────────────
-  // Healthcare role only
+  // ── Old /doctor/* links ────────────────────────────────────
+  // Doctors and Nurses now share the Healthcare Worker portal. Old
+  // bookmarks keep working by forwarding to the matching page.
 
-  {
-    path: '/doctor/home',
-    name: 'DoctorHome',
-    component: DoctorHomepage,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
-
-  {
-    path: '/doctor/patients',
-    name: 'DoctorPatients',
-    component: DoctorPatients,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
-
-  {
-    path: '/doctor/calendar',
-    name: 'DoctorCalendar',
-    component: DoctorCalendar,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
-
-  {
-    path: '/doctor/records',
-    name: 'DoctorVaccinationRecords',
-    component: DoctorVaccinationRecords,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
-
-  {
-    path: '/doctor/reports',
-    name: 'DoctorReports',
-    component: DoctorReports,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
-
-  {
-    path: '/doctor/account',
-    name: 'DoctorAccount',
-    component: DoctorAccount,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
-
-    {
-    path: '/doctor/queue',
-    name: 'DoctorQueue',
-    component: DoctorQueue,
-    meta: {
-      requiresAuth: true,
-      role: 'Healthcare'
-    }
-  },
+  { path: '/doctor/home',     redirect: '/healthcare/home' },
+  { path: '/doctor/queue',    redirect: '/healthcare/queue' },
+  { path: '/doctor/patients', redirect: '/healthcare/patients' },
+  { path: '/doctor/calendar', redirect: '/healthcare/calendar' },
+  { path: '/doctor/records',  redirect: '/healthcare/vaccination-records' },
+  { path: '/doctor/reports',  redirect: '/healthcare/reports' },
+  { path: '/doctor/account',  redirect: '/healthcare/accounts' },
 
   // ── Staff ──────────────────────────────────────────────────
 
@@ -291,13 +217,14 @@ const routes = [
     }
   },
 
- {
-  path: '/staff/patient-records',
-  component: StaffPatientRecords,
-  meta: {
-    requiresAuth: false
-  }
-},
+  {
+    path: '/staff/patient-records',
+    component: StaffPatientRecords,
+    meta: {
+      requiresAuth: true,
+      role: 'Staff'
+    }
+  },
 
   {
     path: '/staff/vaccine-schedule',
@@ -327,14 +254,8 @@ const routes = [
     }
   },
 
-  {
-    path: '/staff/children',
-    component: StaffChildRecord,
-    meta: {
-      requiresAuth: true,
-      role: 'Staff'
-    }
-  },
+  // Children and Parents are tabs on Patient Records now
+  { path: '/staff/children', redirect: '/staff/patient-records?tab=children' },
 
   {
     path: '/staff/doctor-staff',
@@ -345,14 +266,7 @@ const routes = [
     }
   },
 
-  {
-    path: '/staff/parents',
-    component: StaffParentRecord,
-    meta: {
-      requiresAuth: true,
-      role: 'Staff'
-    }
-  },
+  { path: '/staff/parents', redirect: '/staff/patient-records?tab=parents' },
 
   {
     path: '/staff/reports',
@@ -366,6 +280,15 @@ const routes = [
   {
     path: '/staff/vaccine-inventory',
     component: StaffVaccineInventory,
+    meta: {
+      requiresAuth: true,
+      role: 'Staff'
+    }
+  },
+
+  {
+    path: '/staff/checkin-qr',
+    component: StaffCheckinQR,
     meta: {
       requiresAuth: true,
       role: 'Staff'
@@ -484,11 +407,32 @@ const routes = [
   },
 
   {
+    path: '/system-admin/rooms',
+    component: SystemRooms,
+    meta: {
+      requiresAuth: true,
+      role: 'SystemAdmin'
+    }
+  },
+
+  {
     path: '/system-admin/operating-hours',
     component: SystemOperatingHours,
     meta: {
       requiresAuth: true,
       role: 'SystemAdmin'
+    }
+  },
+
+
+  // ── Printable immunization record ─────────────────────────
+  // Any signed-in role: admin, healthcare worker, staff, or the parent.
+
+  {
+    path: '/print/vaccination-card/:childId',
+    component: VaccinationCard,
+    meta: {
+      requiresAuth: true
     }
   },
 
@@ -516,7 +460,7 @@ function homeFor(role) {
     case 'Parent':
       return '/ParentOverview'
     case 'Healthcare':
-      return getUserType() === 'Doctor' ? '/doctor/home' : '/healthcare/home'
+      return '/healthcare/home'
     case 'Staff':
       return '/staff/dashboard'
     case 'SystemAdmin':
@@ -542,7 +486,9 @@ router.beforeEach((to) => {
   // ----------------------------------------------------------
 
   if (to.meta.requiresAuth && !loggedIn) {
-    return '/'
+    // Come back here after signing in (e.g. a parent who scanned the
+    // clinic's check-in QR before logging in)
+    return { path: '/', query: { redirect: to.fullPath } }
   }
 
 
@@ -560,20 +506,6 @@ router.beforeEach((to) => {
   // ----------------------------------------------------------
 
   if (to.meta.role && to.meta.role !== role) {
-    return homeFor(role)
-  }
-
-
-  // ----------------------------------------------------------
-  // 3b. Doctor and Healthcare share meta.role: 'Healthcare', so #3
-  //     above can't tell them apart — split by UserType here.
-  // ----------------------------------------------------------
-
-  if (to.path.startsWith('/doctor/') && getUserType() !== 'Doctor') {
-    return homeFor(role)
-  }
-
-  if (to.path.startsWith('/healthcare/') && getUserType() === 'Doctor') {
     return homeFor(role)
   }
 

@@ -1,7 +1,9 @@
 import axios from "axios"
+import router from "@/router"
+import { logout } from "@/utils/auth"
 
 const api = axios.create({
-  baseURL: "http://localhost:57147/api"
+  baseURL: `${import.meta.env.VITE_API_URL || "http://localhost:57147"}/api`
 })
 
 api.interceptors.request.use(config => {
@@ -13,5 +15,18 @@ api.interceptors.request.use(config => {
 
   return config
 })
+
+// Expired sign-in (8 hours): back to the login page, then back here after
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error?.response?.status === 401 && localStorage.getItem("authToken")) {
+      logout()
+      const here = router.currentRoute.value
+      if (here.path !== "/") router.push({ path: "/", query: { expired: "1", redirect: here.fullPath } })
+    }
+    return Promise.reject(error)
+  }
+)
 
 export default api

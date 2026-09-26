@@ -290,12 +290,12 @@ const showReceiveModal = ref(false)
 const formError = ref(null)
 const receiveForm = reactive({
   vaccineID: '', lotNumber: '', initialQuantity: '', minimumStock: '',
-  expirationDate: '', receivedDate: '', supplier: '',
+  expirationDate: '', manufacturingDate: '', receivedDate: '', supplier: '',
 })
 function openReceiveModal() {
   Object.assign(receiveForm, {
     vaccineID: '', lotNumber: '', initialQuantity: '', minimumStock: '',
-    expirationDate: '', receivedDate: '', supplier: '',
+    expirationDate: '', manufacturingDate: '', receivedDate: '', supplier: '',
   })
   formError.value = null
   showReceiveModal.value = true
@@ -305,6 +305,10 @@ async function submitReceiveStock() {
   if (!receiveForm.vaccineID || !receiveForm.lotNumber || !receiveForm.initialQuantity
       || !receiveForm.minimumStock || !receiveForm.expirationDate || !receiveForm.receivedDate) {
     formError.value = 'Please fill all required fields.'
+    return
+  }
+  if (receiveForm.manufacturingDate && receiveForm.manufacturingDate >= receiveForm.expirationDate) {
+    formError.value = 'The manufacturing date must be before the expiration date.'
     return
   }
   // Belt-and-suspenders: re-check the chosen vaccine is still active right before
@@ -325,6 +329,7 @@ async function submitReceiveStock() {
       currentQuantity: qty, // a fresh batch always starts full
       minimumStock: Number(receiveForm.minimumStock),
       expirationDate: receiveForm.expirationDate,
+      manufacturingDate: receiveForm.manufacturingDate || null,
       receivedDate: receiveForm.receivedDate,
       supplier: receiveForm.supplier || '',
       status: true, // new batches are active by default
@@ -343,7 +348,7 @@ async function submitReceiveStock() {
 /* --------------------------------- Edit modal (restricted field set) --------------------------------- */
 const showEditModal = ref(false)
 const editForm = reactive({
-  id: null, lotNumber: '', minimumStock: '', expirationDate: '', supplier: '', isActive: true, raw: null,
+  id: null, lotNumber: '', minimumStock: '', expirationDate: '', manufacturingDate: '', supplier: '', isActive: true, raw: null,
 })
 function openEditModal(item) {
   Object.assign(editForm, {
@@ -351,6 +356,7 @@ function openEditModal(item) {
     lotNumber: item.lotNumber,
     minimumStock: item.minimumStock,
     expirationDate: toDateInputValue(item.expirationDate),
+    manufacturingDate: item.manufacturingDate ? toDateInputValue(item.manufacturingDate) : '',
     supplier: item.supplier || '',
     isActive: isActive(item),
     raw: item,
@@ -376,6 +382,7 @@ async function submitEdit() {
       currentQuantity: raw.currentQuantity,
       minimumStock: Number(editForm.minimumStock),
       expirationDate: editForm.expirationDate,
+      manufacturingDate: editForm.manufacturingDate || null,
       receivedDate: raw.receivedDate,
       supplier: editForm.supplier || '',
       status: editForm.isActive,
@@ -419,6 +426,7 @@ async function setActiveState(item, nextActive) {
       currentQuantity: item.currentQuantity,
       minimumStock: item.minimumStock,
       expirationDate: item.expirationDate,
+      manufacturingDate: item.manufacturingDate || null,
       receivedDate: item.receivedDate,
       supplier: item.supplier || '',
       status: nextActive,
@@ -585,6 +593,7 @@ async function setActiveState(item, nextActive) {
                       <tr class="text-left text-xs uppercase tracking-wide text-slate-400">
                         <th class="font-medium pl-12 pr-3 py-2">Lot Number</th>
                         <th class="font-medium px-3 py-2">Current / Min</th>
+                        <th class="font-medium px-3 py-2">Manufactured</th>
                         <th class="font-medium px-3 py-2">Expiration</th>
                         <th class="font-medium px-3 py-2">Supplier</th>
                         <th class="font-medium px-3 py-2">Status</th>
@@ -609,6 +618,7 @@ async function setActiveState(item, nextActive) {
                           <span class="font-semibold text-slate-900">{{ item.currentQuantity }}</span>
                           <span class="text-slate-400"> / {{ item.minimumStock }}</span>
                         </td>
+                        <td class="px-3 py-2.5 whitespace-nowrap text-slate-500">{{ item.manufacturingDate ? formatDate(item.manufacturingDate) : '—' }}</td>
                         <td class="px-3 py-2.5 whitespace-nowrap text-slate-600">{{ formatDate(item.expirationDate) }}</td>
                         <td class="px-3 py-2.5 whitespace-nowrap text-slate-500">{{ item.supplier || '—' }}</td>
                         <td class="px-3 py-2.5">
@@ -770,6 +780,10 @@ async function setActiveState(item, nextActive) {
               <input v-model="receiveForm.expirationDate" type="date" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors" />
             </div>
             <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Manufacturing Date <span class="font-normal text-slate-400">(optional)</span></label>
+              <input v-model="receiveForm.manufacturingDate" type="date" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors" />
+            </div>
+            <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Received Date</label>
               <input v-model="receiveForm.receivedDate" type="date" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors" />
             </div>
@@ -811,6 +825,10 @@ async function setActiveState(item, nextActive) {
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Expiration Date</label>
               <input v-model="editForm.expirationDate" type="date" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Manufacturing Date <span class="font-normal text-slate-400">(optional)</span></label>
+              <input v-model="editForm.manufacturingDate" type="date" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors" />
             </div>
             <div class="sm:col-span-2">
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Supplier</label>
@@ -885,7 +903,8 @@ async function setActiveState(item, nextActive) {
               <div><p class="text-xs text-slate-500">Current Quantity</p><p class="text-sm font-medium text-slate-900">{{ selectedBatch.currentQuantity }}</p></div>
               <div><p class="text-xs text-slate-500">Minimum Stock</p><p class="text-sm font-medium text-slate-900">{{ selectedBatch.minimumStock }}</p></div>
               <div><p class="text-xs text-slate-500">Expiration Date</p><p class="text-sm font-medium text-slate-900">{{ formatDate(selectedBatch.expirationDate) }}</p></div>
-              <div class="col-span-2"><p class="text-xs text-slate-500">Received Date</p><p class="text-sm font-medium text-slate-900">{{ formatDate(selectedBatch.receivedDate) }}</p></div>
+              <div><p class="text-xs text-slate-500">Manufacturing Date</p><p class="text-sm font-medium text-slate-900">{{ selectedBatch.manufacturingDate ? formatDate(selectedBatch.manufacturingDate) : '—' }}</p></div>
+              <div><p class="text-xs text-slate-500">Received Date</p><p class="text-sm font-medium text-slate-900">{{ formatDate(selectedBatch.receivedDate) }}</p></div>
             </div>
           </div>
           <p class="text-xs text-slate-400">
@@ -912,4 +931,4 @@ async function setActiveState(item, nextActive) {
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; }
 }
-</style>
+</style>

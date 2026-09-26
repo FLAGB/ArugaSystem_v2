@@ -24,6 +24,7 @@ const roleMeta = {
   Doctor: { tint: 'bg-emerald-50', text: 'text-emerald-700' },
   Nurse: { tint: 'bg-sky-50', text: 'text-sky-700' },
   Staff: { tint: 'bg-amber-50', text: 'text-amber-700' },
+  Administrator: { tint: 'bg-violet-50', text: 'text-violet-700' },
 }
 
 const statusMeta = {
@@ -49,6 +50,7 @@ function formatDate(value) {
 function mapAccount(a) {
   return {
     id: a.accountID,
+    referenceID: a.referenceID,
     firstName: a.firstName || '',
     lastName: a.lastName || '',
     username: a.username || '',
@@ -151,12 +153,74 @@ async function resetPassword(user) {
     user.mustChangePassword = true
     tempPasswordResult.value = {
       name: `${user.firstName} ${user.lastName}`,
+      username: user.username,
       password: response.data.temporaryPassword,
+      emailed: !!response.data.emailed,
     }
     showTempPasswordModal.value = true
   } catch (error) {
     console.error('Failed to reset password:', error)
     actionError.value = 'Could not reset this user\u2019s password. Please try again.'
+  }
+}
+
+/* -------------------------------- Edit staff profile ---------------------------- */
+// Name and PRC license number are admin-only (healthcare workers can only
+// change their contact details on My Account). PUT /api/Users/{id}/admin
+const showEditModal = ref(false)
+const savingEdit = ref(false)
+const editError = ref('')
+const editForm = reactive({
+  userID: null, role: '', firstName: '', middleName: '', lastName: '',
+  prcNo: '', email: '', contactNo: '', address: '',
+})
+
+async function openEditModal(user) {
+  closeMenu()
+  editError.value = ''
+  Object.assign(editForm, {
+    userID: user.referenceID, role: user.role,
+    firstName: user.firstName, middleName: '', lastName: user.lastName,
+    prcNo: '', email: user.email === '—' ? '' : user.email,
+    contactNo: user.contact === '—' ? '' : user.contact, address: '',
+  })
+  showEditModal.value = true
+  try {
+    const { data } = await axios.get(`${API_BASE_URL}/Users/${user.referenceID}`)
+    Object.assign(editForm, {
+      firstName: data.firstName || '', middleName: data.middleName || '', lastName: data.lastName || '',
+      prcNo: data.prcNo || '', email: data.email || '', contactNo: data.contactNo || '', address: data.address || '',
+    })
+  } catch (error) {
+    console.error('Failed to load profile:', error)
+    editError.value = 'Could not load the full profile — some fields may be blank.'
+  }
+}
+
+async function saveEdit() {
+  editError.value = ''
+  if (!editForm.firstName.trim() || !editForm.lastName.trim()) {
+    editError.value = 'First and last name are required.'
+    return
+  }
+  savingEdit.value = true
+  try {
+    const { data } = await axios.put(`${API_BASE_URL}/Users/${editForm.userID}/admin`, {
+      firstName: editForm.firstName, middleName: editForm.middleName, lastName: editForm.lastName,
+      prcNo: editForm.prcNo, email: editForm.email, contactNo: editForm.contactNo, address: editForm.address,
+    })
+    const row = users.value.find(u => u.referenceID === editForm.userID)
+    if (row) {
+      row.firstName = data.firstName
+      row.lastName = data.lastName
+      row.email = data.email || '—'
+      row.contact = data.contactNo || '—'
+    }
+    showEditModal.value = false
+  } catch (error) {
+    editError.value = error.response?.data?.message || 'Could not save changes. Please try again.'
+  } finally {
+    savingEdit.value = false
   }
 }
 
@@ -248,6 +312,7 @@ async function createUser() {
    let temporaryPassword = ''
 let generatedUsername = ''
 let createdName = `${addForm.firstName} ${addForm.lastName}`
+let emailed = false
 
     if (addForm.role === 'Parent') {
       const response = await axios.post(`${API_BASE_URL}/Parents`, {
@@ -260,6 +325,8 @@ let createdName = `${addForm.firstName} ${addForm.lastName}`
         address: addForm.address || null,
       })
       temporaryPassword = response.data.temporaryPassword
+      generatedUsername = addForm.email
+      emailed = !!response.data.emailed
     } else {
       const response = await axios.post(`${API_BASE_URL}/accounts/personnel`, {
   firstName: addForm.firstName,
@@ -274,6 +341,7 @@ let createdName = `${addForm.firstName} ${addForm.lastName}`
 
 generatedUsername = response.data.account?.username || ''
 temporaryPassword = response.data.temporaryPassword
+emailed = !!response.data.emailed
     }
 
     showAddModal.value = false
@@ -283,6 +351,7 @@ temporaryPassword = response.data.temporaryPassword
   name: createdName,
   username: generatedUsername,
   password: temporaryPassword,
+  emailed,
 }
     showTempPasswordModal.value = true
 
@@ -377,6 +446,7 @@ temporaryPassword = response.data.temporaryPassword
               <option>Doctor</option>
               <option>Nurse</option>
               <option>Staff</option>
+              <option>Administrator</option>
             </select>
 
             <select
@@ -463,6 +533,7 @@ temporaryPassword = response.data.temporaryPassword
                       class="absolute right-5 top-11 z-30 w-48 bg-white border border-slate-200 rounded-lg shadow-md py-1 text-left"
                     >
                       <button @click="openDrawer(user)" class="w-full text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">View Details</button>
+                      <button v-if="user.role !== 'Parent'" @click="openEditModal(user)" class="w-full text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">Edit Profile</button>
                       <button @click="resetPassword(user)" class="w-full text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">Reset Password</button>
                       <div class="my-1 border-t border-slate-100"></div>
                       <button v-if="user.status !== 'Active'" @click="setStatus(user, 'Active')" class="w-full text-left px-3.5 py-2 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors">Activate</button>
@@ -541,10 +612,62 @@ temporaryPassword = response.data.temporaryPassword
         </div>
 
         <div class="border-t border-slate-200 p-4 flex items-center gap-2 shrink-0">
+          <button v-if="selectedUser?.role !== 'Parent'" @click="openEditModal(selectedUser)" class="flex-1 text-sm font-semibold px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">Edit Profile</button>
           <button @click="resetPassword(selectedUser)" class="flex-1 text-sm font-semibold px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Reset Password</button>
           <button @click="closeDrawer" class="text-sm font-semibold px-4 py-2 rounded-lg text-slate-500 hover:bg-slate-50 transition-colors">Close</button>
         </div>
       </aside>
+    </transition>
+
+    <!-- ============================ EDIT PROFILE MODAL ============================ -->
+    <transition name="fade">
+      <div v-if="showEditModal" class="fixed inset-0 bg-slate-900/40 z-[60] flex items-center justify-center p-4" @click.self="showEditModal = false">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Edit Profile</h2>
+              <p class="text-xs text-slate-500">{{ editForm.role }} account</p>
+            </div>
+            <button @click="showEditModal = false" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors">✕</button>
+          </div>
+          <div class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">First Name *</label>
+              <input v-model="editForm.firstName" type="text" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Middle Name</label>
+              <input v-model="editForm.middleName" type="text" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Last Name *</label>
+              <input v-model="editForm.lastName" type="text" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <div v-if="editForm.role === 'Doctor' || editForm.role === 'Nurse'" class="sm:col-span-3">
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Professional License No. (PRC)</label>
+              <input v-model="editForm.prcNo" type="text" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Email</label>
+              <input v-model="editForm.email" type="email" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Contact No.</label>
+              <input v-model="editForm.contactNo" type="text" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <div class="sm:col-span-3">
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Address</label>
+              <input v-model="editForm.address" type="text" class="w-full text-sm rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white" />
+            </div>
+            <p class="sm:col-span-3 text-xs text-slate-400">The role can't be changed here. Create a new account if someone changes position.</p>
+            <p v-if="editError" class="sm:col-span-3 text-xs text-rose-500">{{ editError }}</p>
+          </div>
+          <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200">
+            <button @click="showEditModal = false" class="text-sm font-semibold px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button @click="saveEdit" :disabled="savingEdit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">{{ savingEdit ? 'Saving...' : 'Save Changes' }}</button>
+          </div>
+        </div>
+      </div>
     </transition>
 
     <!-- ============================ ADD USER MODAL ============================ -->
@@ -673,6 +796,7 @@ temporaryPassword = response.data.temporaryPassword
     </button>
   </div>
 </div>
+          <p v-if="tempPasswordResult?.emailed" class="text-xs text-emerald-700 mb-2">A copy was also sent to their email address.</p>
           <p v-if="copyStatus" class="text-xs text-emerald-600 mb-4">{{ copyStatus }}</p>
           <p v-else class="text-xs text-transparent mb-4">placeholder</p>
 

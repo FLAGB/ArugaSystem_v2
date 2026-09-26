@@ -35,7 +35,7 @@
                     <p class="text-xs font-bold text-slate-800 leading-tight">{{ notif.title }}</p>
                     <span v-if="!notif.isRead" class="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1"></span>
                   </div>
-                  <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">{{ notif.message }}</p>
+                  <p class="text-[10px] text-slate-500 mt-1 leading-relaxed whitespace-pre-line">{{ notif.message }}</p>
                   <p class="text-[9px] text-slate-400 mt-2 font-bold uppercase tracking-wide">{{ formatRelativeTime(notif.createdAt) }}</p>
                 </div>
               </div>
@@ -43,7 +43,7 @@
           </div>
         </div>
         <div class="shrink-0 px-6 py-4 border-t border-slate-100 bg-slate-50">
-          <p class="text-[9px] text-slate-400 text-center font-bold uppercase tracking-wide">Reminders sent 1 month · 1 week · 5 days · 1 day before each vaccine</p>
+          <p class="text-[9px] text-slate-400 text-center font-bold uppercase tracking-wide">Reminders 2 weeks · 1 week · 5 · 3 · 1 day before each vaccine, by app, email and SMS</p>
         </div>
       </div>
     </div>
@@ -96,11 +96,11 @@ const filteredNotifications = computed(() => {
 })
 
 function notifIcon(type) {
-  const m = { ReminderMonth:'📅', ReminderWeek:'⏰', Reminder5Day:'⚡', ReminderDay:'🔔', OverdueMiss:'😟', Overdue5Day:'⚠️', Overdue2Week:'🚨', OverdueUrgent:'🆘', StockAlert:'📦', StockResolved:'✅' }
+  const m = { ReminderMonth:'📅', Reminder2Week:'📅', ReminderWeek:'⏰', Reminder5Day:'⚡', Reminder3Day:'⚡', ReminderDay:'🔔', Completed:'💉', RecordUpdated:'📝', Announcement:'📢', StockOut:'📦', StockBack:'✅', OverdueMiss:'😟', Overdue5Day:'⚠️', Overdue2Week:'🚨', OverdueUrgent:'🆘', StockAlert:'📦', StockResolved:'✅' }
   return m[type] ?? '🔔'
 }
 function notifIconBg(type) {
-  const m = { ReminderMonth:'bg-blue-100', ReminderWeek:'bg-amber-100', Reminder5Day:'bg-orange-100', ReminderDay:'bg-orange-200', OverdueMiss:'bg-amber-100', Overdue5Day:'bg-orange-200', Overdue2Week:'bg-red-200', OverdueUrgent:'bg-red-400', StockAlert:'bg-red-100', StockResolved:'bg-emerald-100' }
+  const m = { ReminderMonth:'bg-blue-100', Reminder2Week:'bg-blue-100', ReminderWeek:'bg-amber-100', Reminder5Day:'bg-orange-100', Reminder3Day:'bg-orange-100', ReminderDay:'bg-orange-200', Completed:'bg-emerald-100', RecordUpdated:'bg-sky-100', Announcement:'bg-violet-100', StockOut:'bg-red-100', StockBack:'bg-emerald-100', OverdueMiss:'bg-amber-100', Overdue5Day:'bg-orange-200', Overdue2Week:'bg-red-200', OverdueUrgent:'bg-red-400', StockAlert:'bg-red-100', StockResolved:'bg-emerald-100' }
   return m[type] ?? 'bg-slate-100'
 }
 function formatRelativeTime(dateStr) {

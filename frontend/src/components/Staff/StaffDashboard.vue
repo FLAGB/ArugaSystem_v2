@@ -9,6 +9,7 @@ import {
 } from "lucide-vue-next";
 import StaffSidebar from "./StaffSidebar.vue";
 import StaffTopbar from "./StaffTopbar.vue";
+import { getToken } from "@/utils/auth";
 
 const router = useRouter();
 
@@ -36,9 +37,9 @@ const lateCount = computed(() =>
 
 const summaryCards = computed(() => [
   {
-    label: "Today's Appointments",
-    value: "—",
-    trend: "Coming next",
+    label: "Due for Vaccination",
+    value: expected.value.length,
+    trend: `${expected.value.filter(e => e.status === "Not Arrived").length} not yet arrived`,
     up: null,
     icon: CalendarDays,
     tint: "text-emerald-700",
@@ -82,8 +83,13 @@ const summaryCards = computed(() => [
   },
   {
     label: "Available Healthworkers",
-    value: stations.value.filter(s => !s.isOccupied).length,
-    trend: `${stations.value.length} total`,
+    // Doctors/Nurses at a station who aren't with a patient right now
+    // (counted per person — older data can have one worker on several stations)
+    value: (() => {
+      const busy = new Set(stations.value.filter(s => s.isOccupied).map(s => s.workerId));
+      return new Set(stations.value.filter(s => s.workerId && !busy.has(s.workerId)).map(s => s.workerId)).size;
+    })(),
+    trend: `${new Set(stations.value.filter(s => s.workerId).map(s => s.workerId)).size} on duty`,
     up: null,
     icon: UserCog,
     tint: "text-sky-700",
@@ -98,7 +104,7 @@ const summaryCards = computed(() => [
 // than pretending to work.
 const quickActions = [
   { icon: UserPlus, label: "Register Child", action: () => router.push("/staff/patient-records?tab=children&openRegister=1") },
-  { icon: QrCode, label: "Scan Queue QR", disabled: true },
+  { icon: QrCode, label: "Check-in QR", action: () => router.push("/staff/checkin-qr") },
   // For an already-registered patient who walks in without their parent's
   // login (no QR, no parent account access) — this opens a modal to look
   // up the parent/child and add them straight to today's queue, instead of
@@ -169,6 +175,48 @@ const fetchStations = async () => {
     stations.value = [];
   } finally {
     loadingStations.value = false;
+  }
+};
+
+// Sends the signed-in staff member's token so the audit log knows who
+// assigned what.
+const authJson = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` });
+
+/* -------------------- Health workers at stations --------------------
+   The Admission Staff puts a Doctor or Nurse at each station for the day.
+   Patients can only be sent to a station that has someone at it, and only
+   that health worker can record the child's vaccination. */
+const healthWorkers = ref([]);
+const stationMessage = ref("");
+
+const loadHealthWorkers = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/Users?position=Doctor,Nurse`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    healthWorkers.value = (await res.json()).filter(u => u.status === "Active");
+  } catch (e) {
+    console.error("loadHealthWorkers:", e);
+  }
+};
+
+const flashStation = (msg) => {
+  stationMessage.value = msg;
+  setTimeout(() => { stationMessage.value = ""; }, 4000);
+};
+
+const setStationWorker = async (station, userId) => {
+  try {
+    const res = await fetch(`${VACCINATION_BASE}/rooms/${station.roomId}/worker`, {
+      method: "PUT",
+      headers: authJson(),
+      body: JSON.stringify({ userId: userId || null }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.message || `Status ${res.status}`);
+  } catch (error) {
+    flashStation(error.message || "Could not update this station.");
+  } finally {
+    await Promise.all([fetchStations(), loadQueue()]);
   }
 };
 
@@ -353,24 +401,31 @@ const openAssignMenu = (q) => {
 };
 
 const assignStation = async (q, station) => {
+  if (!station.workerId) return;
   try {
-    await fetch(`${VACCINATION_BASE}/AssignRoom`, {
+    const res = await fetch(`${VACCINATION_BASE}/AssignRoom`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authJson(),
       body: JSON.stringify({ queueId: q.queueID, roomId: station.roomId }),
     });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.message || `Status ${res.status}`);
     assignMenuOpen.value = null;
-    await Promise.all([loadQueue(), fetchStations()]);
+    flashStation(`${q.child} sent to ${station.roomName} (${station.doctorName}).`);
   } catch (error) {
     console.error("Assign station error:", error);
-    alert("Could not assign this patient to a station. Please try again.");
+    flashStation(error.message || "Could not assign this patient to a station. Please try again.");
+  } finally {
+    await Promise.all([loadQueue(), fetchStations()]);
   }
 };
 
 const completeSession = async (station) => {
+  if (!confirm(`Mark the visit at ${station.roomName} as done? Only do this if the health worker has finished.`)) return;
   try {
     await fetch(`${VACCINATION_BASE}/CompleteSession/${station.roomID ?? station.roomId}`, {
       method: "POST",
+      headers: authJson(),
     });
     await Promise.all([loadQueue(), fetchStations()]);
   } catch (error) {
@@ -379,41 +434,111 @@ const completeSession = async (station) => {
   }
 };
 
-// No backend endpoint exists to remove a queue entry outright — this stays
-// local-state only until one does.
-const removeFromQueue = (q) => {
-  queue.value = queue.value.filter(r => r.queueID !== q.queueID);
+// DELETE /api/Queue/{id} — also frees the station if the visit had one.
+const removeFromQueue = async (q) => {
   assignMenuOpen.value = null;
+  if (!confirm(`Remove ${q.no} (${q.child}) from today's queue?`)) return;
+  try {
+    const res = await fetch(`${API_BASE}/Queue/${q.queueID}`, { method: "DELETE", headers: authJson() });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+  } catch (error) {
+    console.error("Remove from queue error:", error);
+    alert("Could not remove this entry. Please try again.");
+  } finally {
+    await Promise.all([loadQueue(), fetchStations()]);
+  }
 };
 
-const expected = [
-  { child: "Julian Reyes", time: "9:15 AM", parent: "Mark Reyes", status: "Checked In" },
-  { child: "Ava Dizon", time: "9:15 AM", parent: "Carmen Dizon", status: "Checked In" },
-  { child: "Noah Bautista", time: "9:30 AM", parent: "Ramon Bautista", status: "Checked In" },
-  { child: "Zoe Manalo", time: "10:00 AM", parent: "Paolo Manalo", status: "Not Arrived" },
-  { child: "Leo Fernandez", time: "10:15 AM", parent: "Dina Fernandez", status: "Not Arrived" },
-  { child: "Sophia Ramos", time: "8:45 AM", parent: "Ana Ramos", status: "Late" },
-];
+/* ---------------- Expected Patients (children due today) ----------------
+   From each child's vaccination timeline: everyone with a dose due today,
+   plus whether they've already checked in (i.e. are in today's queue). */
+const dueToday = ref([]);
+const stockSummary = ref([]);
+const activities = ref([]);
+
+const loadExpected = async () => {
+  try {
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const res = await fetch(`${API_BASE}/VaccinationTimeline/schedule?from=${iso}&to=${iso}&includeOverdue=false`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    dueToday.value = await res.json();
+  } catch (e) {
+    console.error("loadExpected:", e);
+  }
+};
+
+const expected = computed(() => {
+  const byChild = new Map();
+  for (const t of dueToday.value) {
+    if (!byChild.has(t.childID)) {
+      byChild.set(t.childID, { childID: t.childID, child: t.childName, parent: t.parentName || "—", vaccines: [], allDone: true });
+    }
+    const e = byChild.get(t.childID);
+    e.vaccines.push(t.abbreviation || t.vaccineName);
+    if (t.status !== "Completed") e.allDone = false;
+  }
+  const queued = new Set(queue.value.flatMap(q => q.childIDs || []));
+  return [...byChild.values()].map(e => ({
+    ...e,
+    time: e.vaccines.join(", "),
+    status: e.allDone ? "Vaccinated" : queued.has(e.childID) ? "Checked In" : "Not Arrived",
+  }));
+});
 const arrivalStyle = {
   "Checked In": "bg-emerald-50 text-emerald-700",
+  Vaccinated: "bg-sky-50 text-sky-700",
   "Not Arrived": "bg-stone-100 text-stone-600",
-  Late: "bg-rose-50 text-rose-700",
 };
-// NOTE: "Expected Today" is still mock data — there's no real appointments/
-// schedule endpoint anywhere in the uploaded files to source this from
-// (AdminHomepage.vue's version was equally mocked). Leaving as-is until
-// that endpoint exists.
 
+/* ---------------- Vaccine stock alerts ----------------
+   Per vaccine: total usable doses vs. the batches' minimum stock, plus
+   any batch expiring within 30 days. */
+const loadStock = async () => {
+  try {
+    const [invRes, vacRes] = await Promise.all([fetch(`${API_BASE}/VaccineInventory`), fetch(`${API_BASE}/Vaccines`)]);
+    if (!invRes.ok || !vacRes.ok) throw new Error("inventory request failed");
+    const inventory = await invRes.json();
+    const vaccines = await vacRes.json();
+    const now = new Date();
+    stockSummary.value = vaccines.map(v => {
+      const usable = inventory.filter(i => i.vaccineID === v.vaccineID && i.status && new Date(i.expirationDate) >= now);
+      const stock = usable.reduce((s, i) => s + i.currentQuantity, 0);
+      const minimum = usable.reduce((s, i) => s + i.minimumStock, 0) || 20;
+      const expiring = usable
+        .filter(i => i.currentQuantity > 0)
+        .map(i => Math.ceil((new Date(i.expirationDate) - now) / 86400000))
+        .filter(d => d <= 30)
+        .sort((a, b) => a - b)[0];
+      const level = stock === 0 ? "Critical" : stock < minimum ? "Low" : expiring !== undefined ? "Watch" : null;
+      return {
+        vaccineID: v.vaccineID,
+        name: v.abbreviation || v.vaccineName,
+        detail: `${stock} doses remaining`,
+        note: stock === 0 ? "Out of stock" : stock < minimum ? `Below minimum of ${minimum}` : expiring !== undefined ? `A batch expires in ${expiring} day${expiring === 1 ? "" : "s"}` : "",
+        level,
+      };
+    }).filter(s => s.level);
+  } catch (e) {
+    console.error("loadStock:", e);
+  }
+};
+const stockAlerts = computed(() => stockSummary.value);
 
-// "Available Healthworkers" section below is now driven by `stations`
-// (from GetRooms), each of which already carries its stationed doctor's
-// name and occupancy — replacing the old hardcoded healthworkers mock.
-
-const stockAlerts = [
-  { name: "MMR", detail: "20 doses remaining", note: "Expires in 5 days", level: "Critical" },
-  { name: "Pentavalent", detail: "15 doses remaining", note: "Low stock", level: "Low" },
-  { name: "BCG", detail: "60 doses remaining", note: "Expires in 30 days", level: "Watch" },
-];
+// "Notify parents" on an out-of-stock vaccine: parents of children due for it
+// this week are told not to come for that dose yet (and told again when it's
+// back). The same check also runs by itself every morning.
+const stockNotice = ref({});
+const notifyStockParents = async (s) => {
+  stockNotice.value = { ...stockNotice.value, [s.vaccineID]: "Sending…" };
+  try {
+    const res = await fetch(`${API_BASE}/Notifications/stock-notices?vaccineId=${s.vaccineID}`, { method: "POST", headers: authJson() });
+    const data = await res.json().catch(() => ({}));
+    stockNotice.value = { ...stockNotice.value, [s.vaccineID]: data.message || (res.ok ? "Done." : "Could not send the notices.") };
+  } catch {
+    stockNotice.value = { ...stockNotice.value, [s.vaccineID]: "Could not send the notices." };
+  }
+};
 const stockStyle = {
   Critical: "bg-rose-50 text-rose-700",
   Low: "bg-amber-50 text-amber-700",
@@ -425,14 +550,39 @@ const stockNoteColor = {
   Watch: "text-sky-700",
 };
 
-const activities = [
-  { icon: UserPlus, text: "Zoe Manalo registered as a walk-in patient.", time: "3 min ago" },
-  { icon: DoorOpen, text: "Julian Reyes checked in and assigned to Room 1.", time: "10 min ago" },
-  { icon: UserCog, text: "Mika Santos assigned to Nurse Bea Fernandez.", time: "16 min ago" },
-  { icon: Syringe, text: "Vaccination completed for Gabriel Torres.", time: "24 min ago" },
-  { icon: FileText, text: "Parent contact info updated for Ava Dizon.", time: "38 min ago" },
-  { icon: AlertTriangle, text: "Sophia Ramos flagged as late for her 8:45 AM slot.", time: "51 min ago" },
-];
+/* ---------------- Recent clinic activity (audit log) ---------------- */
+const ACTIVITY_ICON = {
+  "Patient Management": UserPlus,
+  Vaccination: Syringe,
+  Inventory: ClipboardCheck,
+  Authentication: DoorOpen,
+  "User Management": UserCog,
+};
+function timeAgo(value) {
+  const mins = Math.floor((Date.now() - new Date(value).getTime()) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  return `${Math.floor(hours / 24)} d ago`;
+}
+const loadActivities = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/AuditLogs`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const logs = await res.json();
+    activities.value = logs
+      .filter(l => l.module !== "Authentication")
+      .slice(0, 10)
+      .map(l => ({
+        icon: ACTIVITY_ICON[l.module] || FileText,
+        text: `${l.user}: ${l.action.toLowerCase()} — ${l.affectedRecord !== "—" ? l.affectedRecord : l.description}`,
+        time: timeAgo(l.timestamp),
+      }));
+  } catch (e) {
+    console.error("loadActivities:", e);
+  }
+};
 
 /* Queue overview donut chart */
 
@@ -521,12 +671,18 @@ queue.value = data.map((q) => ({
   parent:
     q.requestBy || "—",
 
-  time: "—",
-  worker: "—",
-  room: "—",
+  // Check-in time, and the station/health worker once staff assigns one
+  time: q.checkedInAt
+    ? new Date(q.checkedInAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
+    : "—",
+  worker: q.assignedWorkerName || "—",
+  room: q.stationName || "—",
+  assignedRoomID: q.assignedRoomID,
 
+  // Backend stores "InProgress"; this page labels it "In Progress".
   status:
-    q.status || "Waiting",
+    q.status === "InProgress" ? "In Progress" : (q.status || "Waiting"),
+  childIDs: (q.children || []).map(c => c.childID),
 }));
   } catch (error) {
     console.error("Queue loading error:", error);
@@ -540,17 +696,32 @@ let queueRefreshInterval = null;
 onMounted(() => {
   loadQueue();
   fetchStations();
+  loadExpected();
+  loadHealthWorkers();
+  loadStock();
+  loadActivities();
   document.addEventListener("click", closeMenus);
 
   queueRefreshInterval = setInterval(() => {
     loadQueue();
     fetchStations();
   }, 5000);
+  // Slower-moving panels
+  slowRefreshInterval = setInterval(() => {
+    loadExpected();
+    loadStock();
+    loadActivities();
+  }, 30000);
 });
+
+let slowRefreshInterval = null;
 
 onUnmounted(() => {
   if (queueRefreshInterval) {
     clearInterval(queueRefreshInterval);
+  }
+  if (slowRefreshInterval) {
+    clearInterval(slowRefreshInterval);
   }
   document.removeEventListener("click", closeMenus);
 });
@@ -687,8 +858,10 @@ onUnmounted(() => {
                   <tr v-if="expandedRow === q.queueID" class="bg-stone-50 border-t border-stone-100">
                     <td colspan="8" class="px-5 py-3 text-[12.5px] text-stone-600">
                       <span class="font-medium text-stone-800">Queue {{ q.no }}</span> —
-                      Child: {{ q.child }} · Parent: {{ q.parent }} · Status: {{ q.status }}
-                      <span class="text-stone-400"> (full profile view isn't wired to a route yet — needs the Children Record page to accept lookup by name/ID.)</span>
+                      Child: {{ q.child }} · Parent: {{ q.parent }} · Checked in {{ q.time }} · Status: {{ q.status }}
+                      <span v-if="q.room !== '—'"> · At {{ q.room }} with {{ q.worker }}</span>
+                      <span v-else-if="q.status === 'Waiting'" class="text-amber-700"> · Not yet sent to a station</span>
+                      <button @click="router.push('/staff/patient-records?tab=children')" class="ml-2 text-emerald-700 font-medium hover:underline">Open Patient Records</button>
                     </td>
                   </tr>
                   </template>
@@ -728,7 +901,7 @@ onUnmounted(() => {
               <div class="space-y-1 max-h-70 overflow-y-auto pr-1">
                 <div
                   v-for="p in expected"
-                  :key="p.child"
+                  :key="p.childID"
                   class="flex items-center justify-between rounded-xl px-3 py-2.5 bg-stone-50"
                 >
                   <div class="min-w-0">
@@ -742,42 +915,64 @@ onUnmounted(() => {
                     {{ p.status }}
                   </span>
                 </div>
+                <p v-if="expected.length === 0" class="text-[12.5px] text-stone-400 px-3 py-2">No vaccinations are due today.</p>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Stations (real data from GET /api/Vaccination/GetRooms) -->
+        <!-- Stations (GET /api/Vaccination/GetRooms) — staff put a Doctor or
+             Nurse at each station, then send checked-in patients to them -->
         <div>
           <div class="flex items-center justify-between mb-3">
-            <p class="text-[14px] font-semibold">Stations</p>
-            <span v-if="loadingStations" class="text-[11px] text-stone-400">Loading…</span>
+            <div>
+              <p class="text-[14px] font-semibold">Stations</p>
+              <p class="text-[11.5px] text-stone-500">Choose who is at each station today. Patients can only be sent to a station with a health worker.</p>
+            </div>
           </div>
-          <div class="grid grid-cols-5 gap-4">
+          <div v-if="stationMessage" class="mb-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-[12.5px] text-sky-800">{{ stationMessage }}</div>
+          <div class="grid grid-cols-4 gap-4">
             <div
               v-for="s in stations"
               :key="s.roomId"
               class="rounded-2xl border p-4 shadow-sm"
-              :class="s.isOccupied ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/20'"
+              :class="!s.workerId ? 'border-stone-200 bg-stone-50' : s.isOccupied ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/20'"
             >
               <div class="flex items-center gap-3">
                 <div
                   class="flex h-10 w-10 items-center justify-center rounded-full text-white text-[12px] font-semibold shrink-0"
-                  :class="s.isOccupied ? 'bg-amber-600' : 'bg-emerald-700'"
+                  :class="!s.workerId ? 'bg-stone-300' : s.isOccupied ? 'bg-amber-600' : 'bg-emerald-700'"
                 >
                   {{ s.doctorName?.split(' ').filter(Boolean).slice(0,2).map(w => w[0]).join('') || '—' }}
                 </div>
-                <div class="min-w-0">
-                  <p class="text-[12.5px] font-semibold truncate">{{ s.doctorName || 'Unassigned' }}</p>
-                  <p class="text-[11px] truncate text-stone-500">{{ s.roomName }}</p>
+                <div class="min-w-0 flex-1">
+                  <p class="text-[12.5px] font-semibold truncate">{{ s.roomName }}</p>
+                  <p class="text-[11px] truncate text-stone-500">
+                    {{ s.doctorName ? `${s.workerPosition || 'Health worker'} · ${s.doctorName}` : 'No health worker' }}
+                  </p>
                 </div>
               </div>
+              <select
+                :value="s.workerId || ''"
+                @change="setStationWorker(s, $event.target.value)"
+                :disabled="s.isOccupied"
+                class="mt-3 w-full rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[12px] text-stone-700 outline-none focus:border-emerald-500 disabled:bg-stone-50 disabled:text-stone-400"
+                :title="s.isOccupied ? 'Finish the current patient before changing the health worker' : 'Health worker at this station'"
+              >
+                <option value="">— No health worker —</option>
+                <option v-for="w in healthWorkers" :key="w.userID" :value="w.userID">
+                  {{ w.position === 'Doctor' ? 'Dr.' : 'Nurse' }} {{ w.firstName }} {{ w.lastName }}
+                </option>
+              </select>
+              <p v-if="s.isOccupied && s.currentPatient" class="mt-2 text-[11px] text-amber-800 truncate">
+                Now with: #{{ s.currentQueueNumber }} {{ s.currentPatient }}
+              </p>
               <div class="mt-3 flex items-center justify-between">
                 <span
                   class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium"
-                  :class="s.isOccupied ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'"
+                  :class="!s.workerId ? 'bg-stone-100 text-stone-500' : s.isOccupied ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'"
                 >
-                  {{ s.isOccupied ? 'Busy' : 'Available' }}
+                  {{ !s.workerId ? 'Closed' : s.isOccupied ? 'Busy' : 'Available' }}
                 </span>
                 <button
                   v-if="s.isOccupied"
@@ -788,7 +983,7 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
-            <p v-if="!loadingStations && stations.length === 0" class="col-span-5 text-[12.5px] text-stone-400">
+            <p v-if="!loadingStations && stations.length === 0" class="col-span-4 text-[12.5px] text-stone-400">
               No stations returned from the server.
             </p>
           </div>
@@ -799,6 +994,7 @@ onUnmounted(() => {
           <div class="col-span-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
             <p class="text-[14px] font-semibold mb-3">Vaccine Stock Alerts</p>
             <div class="space-y-2.5">
+              <p v-if="stockAlerts.length === 0" class="text-[12.5px] text-emerald-700 px-3 py-2">All vaccines are sufficiently stocked.</p>
               <div
                 v-for="s in stockAlerts"
                 :key="s.name"
@@ -808,6 +1004,14 @@ onUnmounted(() => {
                   <p class="text-[12.5px] font-semibold">{{ s.name }}</p>
                   <p class="text-[11px] text-stone-500">{{ s.detail }}</p>
                   <p class="text-[11px]" :class="stockNoteColor[s.level]">{{ s.note }}</p>
+                  <button
+                    v-if="s.level === 'Critical'"
+                    @click="notifyStockParents(s)"
+                    class="mt-1 text-[11px] font-semibold text-emerald-700 hover:underline"
+                  >
+                    Notify parents with a child due for it
+                  </button>
+                  <p v-if="stockNotice[s.vaccineID]" class="text-[10.5px] text-stone-500 mt-0.5">{{ stockNotice[s.vaccineID] }}</p>
                 </div>
                 <span
                   class="text-[10.5px] font-semibold px-2 py-1 rounded-full shrink-0"
@@ -822,6 +1026,7 @@ onUnmounted(() => {
           <div class="col-span-8 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
             <p class="text-[14px] font-semibold mb-3">Recent Clinic Activities</p>
             <div class="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+              <p v-if="activities.length === 0" class="text-[12.5px] text-stone-400">No recent activity yet.</p>
               <div v-for="(a, i) in activities" :key="i" class="flex items-start gap-3">
                 <div class="flex h-8 w-8 items-center justify-center rounded-full shrink-0 bg-emerald-50">
                   <component :is="a.icon" :size="14" class="text-emerald-800" />
@@ -841,19 +1046,24 @@ onUnmounted(() => {
       class="menu-popover fixed z-50 w-64 rounded-xl border border-stone-200 bg-white shadow-lg p-2"
       :style="menuPosition"
     >
-      <p class="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Assign to station</p>
-      <button
-        v-for="s in stations.filter(st => !st.isOccupied)"
-        :key="s.roomId"
-        @click="assignStation(activeAssignQueue, s)"
-        class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[12.5px] hover:bg-stone-50"
-      >
-        <span>{{ s.roomName }}</span>
-        <span class="text-[10.5px] text-stone-400">{{ s.doctorName }}</span>
-      </button>
-      <p v-if="stations.filter(st => !st.isOccupied).length === 0" class="px-2 py-1.5 text-[12px] text-stone-400">
-        No stations available right now.
-      </p>
+      <p class="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Send {{ activeAssignQueue.child }} to</p>
+      <p v-if="activeAssignQueue.status === 'Completed'" class="px-2 py-1.5 text-[12px] text-stone-400">This visit is already completed.</p>
+      <template v-else>
+        <button
+          v-for="s in stations.filter(st => !st.isOccupied)"
+          :key="s.roomId"
+          @click="assignStation(activeAssignQueue, s)"
+          :disabled="!s.workerId"
+          class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[12.5px] hover:bg-stone-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          :title="s.workerId ? '' : 'Put a health worker at this station first (Stations section below)'"
+        >
+          <span :class="s.workerId ? '' : 'text-stone-300'">{{ s.roomName }}</span>
+          <span class="text-[10.5px]" :class="s.workerId ? 'text-stone-500' : 'text-stone-300'">{{ s.doctorName || 'No health worker' }}</span>
+        </button>
+        <p v-if="stations.filter(st => !st.isOccupied && st.workerId).length === 0" class="px-2 py-1.5 text-[12px] text-stone-400">
+          No free station with a health worker right now.
+        </p>
+      </template>
     </div>
 
     <div

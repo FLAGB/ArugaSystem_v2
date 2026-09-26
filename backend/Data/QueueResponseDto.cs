@@ -9,6 +9,16 @@ namespace AndroidWebAPI.DTOs
         public string Status { get; set; } = string.Empty;
         public DateTime QueueDate { get; set; }
 
+        // When the family checked in (Queues.CreatedAt)
+        public DateTime CheckedInAt { get; set; }
+
+        // Station the Admission Staff sent this visit to, and the health
+        // worker currently stationed there. Null until a station is assigned.
+        public int? AssignedRoomID { get; set; }
+        public string? StationName { get; set; }
+        public Guid? AssignedWorkerID { get; set; }
+        public string? AssignedWorkerName { get; set; }
+
         public List<QueueChildResponseDto> Children { get; set; }
             = new List<QueueChildResponseDto>();
     }

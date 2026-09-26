@@ -25,11 +25,11 @@ export function getUser() {
   return getAccount()?.user || null
 }
 
-// UserType is the fine-grained type inside `user` — 'Doctor' | 'Nurse' |
-// 'Midwife' | 'Admission' | 'Admin' | 'Staff'. `role` (above) is the coarse
-// value the route guard checks against `meta.role` ('Staff' | 'Healthcare' |
-// 'Parent' | 'SystemAdmin'); UserType is what tells Doctor apart from
-// Nurse/Midwife within the shared 'Healthcare' role.
+// UserType is the job title inside `user` — 'Doctor' | 'Nurse' | 'Staff' |
+// 'Administrator'. `role` (above) is the coarse value the route guard checks
+// against `meta.role` ('Staff' | 'Healthcare' | 'Parent' | 'SystemAdmin').
+// Doctors and Nurses both have role 'Healthcare' and use the same portal;
+// UserType is only used for display.
 export function getUserType() {
   return getUser()?.UserType || null
 }

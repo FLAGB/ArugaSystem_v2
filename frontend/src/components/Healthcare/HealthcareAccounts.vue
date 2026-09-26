@@ -1,10 +1,11 @@
 <template>
   <div class="flex h-screen bg-slate-50 font-sans antialiased text-slate-900">
 
-    <HealthcareSidebar @logout="logout" />
+    <HealthcareSidebar />
 
+    <!-- MAIN -->
     <div class="flex flex-col flex-1 overflow-hidden">
-      <HealthcareHeader :worker="worker" title="My Account" />
+      <HealthcareHeader />
 
       <main class="flex-1 overflow-y-auto p-6">
         <div class="mb-6">
@@ -21,23 +22,27 @@
             <div class="bg-white rounded-xl border border-slate-200 p-6">
               <h3 class="font-semibold text-slate-800 mb-1">Profile Information</h3>
               <p class="text-xs text-slate-400 mb-4">Name and license number can only be changed by the System Administrator.</p>
+              <div v-if="profileLoadError" class="mb-4 text-xs text-red-500">{{ profileLoadError }}</div>
               <div class="grid grid-cols-2 gap-4">
+                <!-- Read-only: Full Name -->
                 <div>
                   <label class="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1.5">
                     <User class="w-3 h-3 inline mr-1" />Full Name
                   </label>
-                  <div class="w-full px-3 py-2.5 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-700 flex items-center gap-2">
-                    {{ worker.fullName || '—' }}
+                  <div class="w-full px-3 py-2.5 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-700">
+                    {{ doctor.fullName || '—' }}
                   </div>
                 </div>
+                <!-- Read-only: PRC No. -->
                 <div>
                   <label class="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1.5">
                     <BadgeCheck class="w-3 h-3 inline mr-1" />Professional License No.
                   </label>
-                  <div class="w-full px-3 py-2.5 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-700 flex items-center gap-2">
-                    {{ worker.prcNo || '—' }}
+                  <div class="w-full px-3 py-2.5 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-700">
+                    {{ doctor.prcNo || '—' }}
                   </div>
                 </div>
+                <!-- Editable: Email -->
                 <div>
                   <label class="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1.5">
                     <Mail class="w-3 h-3 inline mr-1" />Email Address
@@ -45,6 +50,7 @@
                   <input v-model="form.email" type="email"
                     class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                 </div>
+                <!-- Editable: Contact -->
                 <div>
                   <label class="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1.5">
                     <Phone class="w-3 h-3 inline mr-1" />Contact Number
@@ -52,10 +58,11 @@
                   <input v-model="form.contactNo" type="text"
                     class="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                 </div>
+                <!-- Read-only: Role -->
                 <div class="col-span-2">
                   <label class="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1.5">Role</label>
                   <div class="w-full px-3 py-2.5 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-700">
-                    {{ worker.userType || '—' }}
+                    {{ doctor.userType || '—' }}
                   </div>
                 </div>
               </div>
@@ -64,9 +71,10 @@
                   :disabled="savingProfile"
                   class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                   <Save class="w-4 h-4" />
-                  {{ savingProfile ? 'Saving…' : 'Save Changes' }}
+                  {{ savingProfile ? 'Saving…' : 'Save Contact Info' }}
                 </button>
                 <p v-if="profileSaved" class="text-xs text-emerald-600 font-medium">✓ Changes saved</p>
+                <p v-if="profileError" class="text-xs text-red-500">{{ profileError }}</p>
               </div>
             </div>
 
@@ -122,11 +130,11 @@
             <!-- Avatar Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-6 flex flex-col items-center text-center">
               <div class="w-20 h-20 rounded-full bg-emerald-700 flex items-center justify-center text-2xl font-bold text-white mb-3">
-                {{ workerInitials }}
+                {{ doctorInitials }}
               </div>
-              <p class="font-bold text-slate-800">{{ worker.fullName }}</p>
-              <p class="text-sm text-slate-400 mt-0.5">{{ worker.userType }}</p>
-              <p v-if="form.prcNo" class="text-xs text-slate-400 mt-0.5">{{ form.prcNo }}</p>
+              <p class="font-bold text-slate-800">{{ doctor.fullName }}</p>
+              <p class="text-sm text-slate-400 mt-0.5">{{ doctor.userType }}</p>
+              <p v-if="doctor.prcNo" class="text-xs text-slate-400 mt-0.5">{{ doctor.prcNo }}</p>
             </div>
 
             <!-- Notification Settings -->
@@ -148,8 +156,11 @@
                   </div>
                 </label>
               </div>
-              <button class="mt-4 w-full py-2 text-sm font-medium text-white bg-slate-700 rounded-lg hover:bg-slate-800 transition-colors">
-                Save Settings
+              <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">
+                In-app alerts (bell) are always on. SMS and email delivery start once the clinic's messaging gateway is connected.
+              </p>
+              <button @click="saveNotifSettings" class="mt-3 w-full py-2 text-sm font-medium text-white bg-slate-700 rounded-lg hover:bg-slate-800 transition-colors">
+                {{ notifSaved ? '✓ Settings Saved' : 'Save Settings' }}
               </button>
             </div>
 
@@ -157,42 +168,38 @@
         </div>
       </main>
     </div>
+
   </div>
 </template>
 
 <script setup>
-import { getUser, getToken, logout as clearSession } from '@/utils/auth'
+import { getUser } from '@/utils/auth'
+import HealthcareSidebar from './Components/HealthcareSidebar.vue'
+import HealthcareHeader from './Components/HealthcareHeader.vue'
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { Save, Lock, User, Mail, Phone, BadgeCheck, Bell, Check, X } from 'lucide-vue-next'
-import HealthcareSidebar from '@/components/Healthcare/Components/HealtcareSidebar.vue'
-import HealthcareHeader from '@/components/Healthcare/Components/HealthcareHeader.vue'
+import { useRouter, useRoute } from 'vue-router'
+import axios from 'axios'
+import {
+  Home, Users, Calendar, Syringe, FileText, Settings,
+  Search, Bell, LogOut, Save, Lock, User, Mail, Phone, BadgeCheck, Check, X,
+  ListChecks
+} from 'lucide-vue-next'
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
 
 const router = useRouter()
+const route  = useRoute()
 
-// VITE_API_URL is the bare host (no /api) per the project's existing
-// convention — /api is appended here, not stored in the env var.
-const API_BASE = `${(import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')}/api`
-
-function authHeaders(json = false) {
-  const h = { Authorization: `Bearer ${getToken()}` }
-  if (json) h['Content-Type'] = 'application/json'
-  return h
-}
-
-// ─────────────────────────────────────────────────────────────
-// AUTH
-// SKIP_AUTH lets you test the page without a real login session.
-// Set to false (or delete the block) before shipping.
-// ─────────────────────────────────────────────────────────────
-const SKIP_AUTH = false
-
-const worker = ref({ userId: '', fullName: '', userType: '', prcNo: '' })
-const form   = ref({ email: '', contactNo: '' })
+const doctor = ref({ userId: '', fullName: '', userType: '', prcNo: '' })
+const form   = ref({ firstName: '', middleName: '', lastName: '', prcNo: '', email: '', contactNo: '', address: '' })
 const pwForm = ref({ current: '', newPw: '', confirm: '' })
 const pwError       = ref('')
 const pwSaving      = ref(false)
 const pwSuccess     = ref(false)
+const savingProfile = ref(false)
+const profileSaved  = ref(false)
+const profileError  = ref('')
+const profileLoadError = ref('')
 
 // Live checklist shown under New Password. Also gates the submit
 // button, and changePassword() re-checks the same rules server-side
@@ -208,44 +215,92 @@ const pwRequirements = computed(() => {
   ]
 })
 const pwRequirementsMet = computed(() => pwRequirements.value.every(r => r.met))
-const savingProfile = ref(false)
-const profileSaved  = ref(false)
 
 onMounted(() => {
-  const account = getUser()
-
-  if (!account && !SKIP_AUTH) {
-    router.push('/')
-    return
+  const u = getUser()
+if (!u) { router.push('/'); return }
+  doctor.value = {
+    userId:   u.UserID,
+    fullName: `${u.FirstName} ${u.LastName}`,
+    userType: u.UserType && u.UserType !== 'Healthcare' ? u.UserType : 'Healthcare Worker',
+    prcNo:    u.PRCNo || '',
   }
-
-  const u = account || { UserID: 'dev-test-user', FirstName: 'Test', LastName: 'Worker', UserType: 'Nurse' }
-
-  worker.value = {
-    userId:   u.UserID || u.userID,
-    fullName: `${u.FirstName || u.firstName} ${u.LastName || u.lastName}`.trim(),
-    userType: u.UserType || u.userType || u.role,
-    prcNo:    u.PRCNo || u.prcNo || '',
-  }
+  form.value.firstName = u.FirstName || ''
+  form.value.lastName  = u.LastName || ''
+  form.value.prcNo     = doctor.value.prcNo
+  loadProfile()
+  loadNotifSettings()
 })
 
-const workerInitials = computed(() =>
-  worker.value.fullName.split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2)
+const doctorInitials = computed(() =>
+  doctor.value.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 )
 
-const notifSettings = ref([
-  { key: 'email', label: 'Email Alerts',  enabled: true,  highlight: false },
-  { key: 'sms',   label: 'SMS Alerts',    enabled: false, highlight: false },
-  { key: 'daily', label: 'Daily Reports', enabled: true,  highlight: false },
-])
+// ── Profile — GET / PUT /api/Users/{id} ─────────────────────
+async function loadProfile() {
+  profileLoadError.value = ''
+  try {
+    const { data } = await axios.get(`${API}/api/Users/${doctor.value.userId}`)
+    form.value = {
+      firstName:  data.firstName || '',
+      middleName: data.middleName || '',
+      lastName:   data.lastName || '',
+      prcNo:      data.prcNo || '',
+      email:      data.email || '',
+      contactNo:  data.contactNo || '',
+      address:    data.address || '',
+    }
+    if (data.position) doctor.value.userType = data.position
+    // Name/PRC may have been changed by the administrator since login.
+    doctor.value.fullName = `${data.firstName} ${data.lastName}`
+    doctor.value.prcNo = data.prcNo || ''
+  } catch (e) {
+    console.error('loadProfile:', e)
+    profileLoadError.value = 'Could not load your saved profile — showing the details from your login.'
+  }
+}
 
 async function saveProfile() {
+  profileError.value = ''
   savingProfile.value = true
-  await new Promise(r => setTimeout(r, 800)) // simulate API call
-  // await fetch(`${API_BASE}/Users/${worker.value.userId}`, { method: 'PATCH', headers: authHeaders(true), body: ... })
-  savingProfile.value = false
-  profileSaved.value  = true
-  setTimeout(() => profileSaved.value = false, 3000)
+  try {
+    // Contact details only — name and PRC number are admin-managed.
+    await axios.put(`${API}/api/Users/${doctor.value.userId}`, {
+      email: form.value.email,
+      contactNo: form.value.contactNo,
+      address: form.value.address,
+    })
+    profileSaved.value = true
+    setTimeout(() => profileSaved.value = false, 3000)
+  } catch (e) {
+    profileError.value = e.response?.data?.message || 'Could not save your profile. Please try again.'
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+// ── Notification preferences (saved per user on this device) ─
+const notifSettings = ref([
+  { key: 'email',   label: 'Email Alerts',          enabled: true,  highlight: false },
+  { key: 'sms',     label: 'SMS Alerts',            enabled: false, highlight: false },
+  { key: 'daily',   label: 'Daily Reports',         enabled: true,  highlight: false },
+])
+const notifSaved = ref(false)
+const notifKey = () => `aruga.notifSettings.${doctor.value.userId}`
+
+function loadNotifSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(notifKey()) || 'null')
+    if (saved) notifSettings.value.forEach(n => { if (n.key in saved) n.enabled = saved[n.key] })
+  } catch { /* ignore a corrupt/blocked store */ }
+}
+
+function saveNotifSettings() {
+  try {
+    localStorage.setItem(notifKey(), JSON.stringify(Object.fromEntries(notifSettings.value.map(n => [n.key, n.enabled]))))
+  } catch { /* storage blocked — settings still apply for this visit */ }
+  notifSaved.value = true
+  setTimeout(() => notifSaved.value = false, 2500)
 }
 
 async function changePassword() {
@@ -257,30 +312,21 @@ async function changePassword() {
 
   pwSaving.value = true
   try {
-    const res = await fetch(`${API_BASE}/Users/${worker.value.userId}/change-password`, {
-      method: 'PATCH',
-      headers: authHeaders(true),
-      body: JSON.stringify({
-        currentPassword: pwForm.value.current,
-        newPassword: pwForm.value.newPw,
-      }),
+    await axios.patch(`${API}/api/Users/${doctor.value.userId}/change-password`, {
+      currentPassword: pwForm.value.current,
+      newPassword: pwForm.value.newPw,
     })
-    if (!res.ok) {
-      const data = await res.json().catch(() => null)
-      throw new Error(data?.message || `Change password failed (${res.status})`)
-    }
     pwSuccess.value = true
     pwForm.value = { current: '', newPw: '', confirm: '' }
     setTimeout(() => pwSuccess.value = false, 3000)
   } catch (err) {
-    pwError.value = err.message || 'Current password is incorrect, or the update failed.'
+    pwError.value = err.response?.data?.message || 'Current password is incorrect, or the update failed.'
   } finally {
     pwSaving.value = false
   }
 }
 
-function logout() {
-  clearSession()
-  router.push('/')
-}
 </script>
+
+<style scoped>
+</style>

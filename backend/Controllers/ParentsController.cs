@@ -36,8 +36,12 @@ namespace AndroidWebAPI.Controllers
         }
 
 // ── CREATE: POST /api/Parents ─────────────────────────────
+[Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
 [HttpPost]
-public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
+public async Task<IActionResult> CreateParent(
+    [FromBody] CreateParentDto dto,
+    [FromServices] AndroidWebAPI.Services.MessageSender sender,
+    [FromServices] AndroidWebAPI.Services.AuditService audit)
 {
     try
     {
@@ -88,7 +92,13 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
                     return BadRequest(new { message = complexityError });
 
                 passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-                mustChangePassword = false;
+                // Staff typed this password in directly — it's still an
+                // account someone other than the parent set up, so force
+                // the parent to set their own private password on first
+                // login, same as the auto-generated-temp-password path
+                // below. No expiry here since this isn't a time-boxed
+                // temporary password.
+                mustChangePassword = true;
                 temporaryPasswordExpiresAt = null;
             }
             else
@@ -126,6 +136,7 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
         var created = await _parentRepo.CreateAsync(parent);
 
         Guid? accountId = null;
+        bool emailed = false;
 
         if (dto.CreateLogin)
         {
@@ -152,7 +163,24 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
 
             await _accountRepository.CreateAsync(account);
             accountId = account.AccountID;
+
+            // Welcome email with how to sign in. The password is only
+            // included when the system made it up; a password the staff
+            // typed in was already given to the parent in person.
+            emailed = await sender.SendEmailAsync(dto.Email, "Your Aruga parent account is ready",
+                $"Hi {dto.FirstName},\n\n" +
+                "Leveriza Health Center created your Aruga parent account. With it you can see your child's " +
+                "vaccination schedule and records, get reminders before each vaccine, and check in at the clinic.\n\n" +
+                $"Sign in with: {dto.Email}\n" +
+                (temporaryPassword != null
+                    ? $"Temporary password: {temporaryPassword}\n"
+                    : "Password: the temporary password the health center staff gave you\n") +
+                "\nYou'll be asked to choose your own password the first time you sign in.");
         }
+
+        await audit.LogAsync("Patient Management", "Create",
+            $"Parent – {created.FirstName} {created.LastName}",
+            dto.CreateLogin ? "Registered a parent/guardian with a portal login." : "Registered a parent/guardian (contact only, no login).");
 
         return CreatedAtAction(
             nameof(GetParentById),
@@ -177,7 +205,8 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
                 // TESTING ONLY — shown to the admin so they can
                 // hand it to the parent. Null when the client supplied
                 // its own password, or when no login was created.
-                temporaryPassword = temporaryPassword
+                temporaryPassword = temporaryPassword,
+                emailed
             }
         );
     }
@@ -201,6 +230,7 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
         [HttpGet("{id}")]
         public async Task<IActionResult> GetParentById(Guid id)
         {
+            if (!AndroidWebAPI.Services.AccessGuard.CanSeeParent(User, id)) return Forbid();
             var parent = await _parentRepo.GetByIdAsync(id);
             if (parent == null)
                 return NotFound(new { message = "Parent not found" });
@@ -230,6 +260,7 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
         }
 
         // ── READ: GET /api/Parents/all ────────────────────────────
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("all")]
         public async Task<IActionResult> GetAllParents()
         {
@@ -250,6 +281,7 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
         }
 
         // ── UPDATE: PUT /api/Parents/{id} ─────────────────────────
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateParent(Guid id, [FromBody] UpdateParentDto dto)
         {
@@ -374,6 +406,7 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
             Guid id,
             [FromBody] ChangePasswordDto dto)
         {
+            if (!AndroidWebAPI.Services.AccessGuard.CanSeeParent(User, id)) return Forbid();
             if (string.IsNullOrWhiteSpace(dto.CurrentPassword))
                 return BadRequest(new
                 {
@@ -415,6 +448,7 @@ public async Task<IActionResult> CreateParent([FromBody] CreateParentDto dto)
         [HttpGet("dashboard/{id}")]
         public async Task<IActionResult> GetDashboard(Guid id)
         {
+            if (!AndroidWebAPI.Services.AccessGuard.CanSeeParent(User, id)) return Forbid();
             var data = await _parentRepo.GetDashboardData(id);
             if (data == null)
                 return NotFound(new { message = "Parent not found" });

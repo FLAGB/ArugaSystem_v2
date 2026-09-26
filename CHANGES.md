@@ -1,0 +1,207 @@
+# Aruga: what changed (September 2026)
+
+A plain-language list of everything that was changed, fixed or added, grouped
+by who uses it. Nothing here has been committed to git yet.
+
+---
+
+## Latest changes (after the group's feedback)
+
+- **Family No. and Barangay instead of Patient ID.** The health center identifies families by these, so:
+  - Staff Patient Records, the Doctor/Nurse Patients list, admin Patient Management and the printed vaccination card show **Family No.** and **Barangay** instead of the system ID;
+  - search works by Family No. or barangay;
+  - Family No. is now saved (the registration form had the box, but the value was thrown away) and can be edited;
+  - when a child is registered under a parent who already has a child here, the Family No., barangay and address are filled in from the sibling.
+- **Rooms are named Room 1, Room 2, Room 3.**
+  - The test stations (101, 102, 103, Station A–C) were removed.
+  - A new admin page, **Vaccination Rooms**, adds, renames or removes rooms (a room with a patient in it can't be removed).
+  - Staff still choose who works in each room every day on their dashboard.
+- **Weekly stock check (Wednesdays).**
+  - Every Wednesday at 8:00 AM the **Admission Staff and the Administrator** get a stock check in their bell and by email. It shows, per vaccine: doses on hand vs. doses due this week, what to re-stock, and about how many to order. The order covers two weeks plus the minimum stock, because when the pharmacy is out the supplies come the following week.
+  - The same table is on the Staff **Inventory** page any time, with a "Send to Staff & Admin now" button.
+  - The instant "running low" alert (a batch drops below its minimum) now also goes to the Admission Staff.
+  - When a new batch is received, parents who were told the vaccine was out of stock are told right away that it's back.
+- **Free SMS through TextBee.**
+  - Texts are sent through the clinic's Android phone (free plan: 300 a month, 50 a day).
+  - To fit that, only the messages where timing matters go by SMS: "due tomorrow", "missed yesterday", out of stock / back in stock, password codes, and announcements when ticked. Everything else still goes in the app and by email.
+  - A daily limit stops texts once it's reached.
+  - Email stays on Gmail: it's free and allows about 500 a day, where EmailJS gives 200 a month. Setup steps are in `backend/README.md`.
+- **Removed:**
+  - the unused self-registration page (`/registration`), since staff register families;
+  - the four outdated analysis files in `frontend/` (`API_DISCREPANCIES.md`, `FRONTEND_ANALYSIS.md`, `INTEGRATION_GUIDE.md`, `PROJECT_ANALYSIS.md`).
+- **Fixed:**
+  - `DemoSeed_Remove.sql` still referred to two deleted tables and would have failed;
+  - a long notification (e.g. many changed fields) could make saving fail, because the in-app copy has a 500-character limit;
+  - the Check-in QR page showed an error on days the clinic is closed; it now just explains that the clinic is closed.
+
+---
+
+## 1. The biggest changes at a glance
+
+| What | Before | Now |
+|---|---|---|
+| Doctor / Nurse portal | Separate Doctor folder, many pages were placeholders | One **Healthcare Worker** portal for Doctors and Nurses; every page uses real data |
+| Stations | Only "Doctor Carlos" could be put at a station; anyone could record any child's vaccine | Staff pick a Doctor or Nurse for each station; **only the worker at the patient's station can record today's vaccine** |
+| Doctor Diagnosis | A diagnosis field on every vaccination | Replaced by **Remarks** (reactions / complications after the vaccine), editable later, with history |
+| QR check-in | Switched off ("demo" button, the QR tables didn't exist) | **Works**: staff show today's QR; parents scan it (or type the 6-letter code) to get a queue number |
+| Forgot Password | Page existed, backend didn't | **Works**: 6-digit code by email or SMS, 10-minute expiry, limited tries |
+| SMS / Email (Objective 3) | In-app notifications only | Reminders, "vaccine given", "record updated", stock notices, announcements and account emails go out **by email and SMS** as well (once set up; see §8) |
+| Vaccine stock | Staff/admin saw low stock | Also: parents of children due for an **out-of-stock vaccine are told not to come yet**, then told when it's back |
+| Security | Most of the API could be used without logging in | Every request needs a login; **each role can only do its own job**; **parents can only see their own family** |
+| Database | Duplicate rules, unused tables, missing QR tables | Cleaned up; one script builds the whole database on a new computer |
+
+---
+
+## 2. Parent / Guardian
+
+- **Overview, Schedule, Records** use the child's real vaccination timeline from the server (before, each page calculated dates on its own, using wrong vaccine IDs).
+- **Check-in**
+  - Scan the QR at the clinic entrance with the phone camera, or type the code printed under it.
+  - If they scan while logged out, they come back to Check-in after logging in.
+  - After checking in, the page shows the queue number, how many families are ahead, and **which station to go to** when called ("Please go to Room 2 (Nurse Mark Anthony)"). It updates by itself.
+  - Clinic hours shown on the page come from the admin's Operating Hours (they were hard-coded before).
+- **Records → Download PDF** opens a printable immunization card (patient info, all doses with lot numbers, who gave them).
+- **Notifications** now include: reminders before each dose (14, 7, 5, 3, 1 days), missed-dose follow-ups (1, 5, 14, 30 days), "vaccine given" (with the next due date), "your child's record was updated" (lists what changed), stock notices, and announcements.
+- **Forgot Password** on the login page works (see §1).
+- If a login session expires (after 8 hours), the app goes back to the login page with a message instead of showing empty pages.
+
+## 3. Admission Staff
+
+- **Dashboard**
+  - Each station has a dropdown to choose the Doctor/Nurse working there today.
+  - A patient can only be sent to a station that has someone at it.
+  - The queue table shows check-in time, station and health worker.
+  - "Remove from Queue" really deletes the entry; "Mark Done" asks for confirmation and frees the station.
+  - Stations left "busy" from an earlier day free themselves automatically.
+  - **Stock alerts:** an out-of-stock vaccine has a "Notify parents with a child due for it" button.
+  - Quick action **Check-in QR** (was a disabled "coming soon" button).
+- **Check-in QR page** (new, also in the sidebar)
+  - Shows today's QR and code, with a Print button.
+  - A switch sets whether parents must scan it.
+  - A new code is made each clinic day, so an old photo of the QR can't be used to queue from home.
+- **Patient Records**
+  - "Next Vaccine" and "Vaccination Status" now come from the real schedule. They were calculated in the browser assuming Mon/Wed/Fri clinic days, so they could disagree with what parents saw.
+  - Editing a child:
+    - **allergies are kept** (they used to be erased on every save)
+    - changing the **birth date now works** and moves every upcoming dose
+    - you can edit sex and allergies
+    - the parent is notified of the change
+  - Editing a parent uses separate First / Middle / Last name boxes (two-word first names like "Mark Anthony" were being split wrongly).
+  - The table shows each child's **Family No. and Barangay** (see "Latest changes") instead of a system ID.
+  - The temporary password rule for a new parent login matches the server's rule (upper, lower, number, symbol). The parent gets a welcome email.
+  - A guardian with no email no longer breaks the page.
+- **Vaccine Schedule:** "Doses Needed — Next 30 Days" now shows the stock on hand and warns "short by N".
+- **Calendar:** shows, per day, children **due**, doses **given**, and days the clinic is **closed** (weekends and holidays). Click a day for the names.
+- **Queue Management:** a visit can't be set to "In Progress" from here any more. That only happens by sending the patient to a station, so the station rules hold.
+- **Account Settings** (gear icon):
+  - Staff can update their own email, mobile number and address; name and role stay admin-only.
+  - The password form shows readable errors.
+- **Bell icon:** families waiting for a station, with a red dot when someone has waited 15+ minutes. Before, it listed "late" patients, a status the system never sets, so it was always empty.
+- The separate old "Parents" and "Children" pages (`/staff/parents`, `/staff/children`) now open the matching tab of Patient Records. They were duplicates, and their Edit button did nothing.
+
+## 4. Doctor / Nurse (Healthcare Worker)
+
+- One shared portal: Home, Queue, Patients, Calendar, Vaccination Records, Reports, My Account. Old `/doctor/...` links still work.
+- **Home and Queue**
+  - Both show **My Station** and the patient currently there.
+  - "Start Vaccinating" only appears for the patient the staff sent to your station.
+- **Vaccination visit page**
+  - Shows due and overdue doses and allergies, and records several doses in one visit.
+  - Shows the next due date after each dose.
+  - Blocked, with an explanation, if the patient isn't at your station. The server enforces the same rule.
+  - Recording a dose deducts stock and applies the **28-day rule**: the next dose is never sooner than 28 days (or the vaccine's own interval) after the one just given, then moved to the next open clinic day.
+- **Patients:** status and next dose from the real schedule; the remaining schedule; history with an editable **Remarks / Reactions** column (reactions are highlighted; every edit is logged).
+- **My Account:** only contact information can be edited. Name and PRC license are changed by the Administrator (as requested).
+- Low-stock alerts arrive in the bell.
+
+## 5. System Administrator
+
+- Every page uses live data: Dashboard, User Management, Patient Management, Vaccines, Inventory, Notifications, Operating Hours, Reports, Audit Logs.
+- **User Management**
+  - Create Doctor / Nurse / Staff / Parent accounts. This used to fail because of a database rule.
+  - The temporary password is shown **and emailed** to the person.
+  - "Reset Password" also emails the new temporary password.
+  - Edit Profile lets the admin change names and PRC license.
+  - Deactivated accounts can't log in.
+- **Notifications:** "Create Announcement" can also go out **by email and/or SMS** (it was a disabled "Future" option). The page shows whether email and SMS are set up.
+- **Inventory:** batches have a **Manufacturing Date** (from the paper's objectives), shown in the table and details.
+- **Vaccines:** "Delete" works. It used to crash because the function was missing. A vaccine already used in records is protected: you're told to deactivate it instead.
+- **Audit Logs**
+  - Every important action is recorded with who, when, where from, and old/new values.
+  - Recorded actions include logins, failed logins, password changes and resets, accounts, children, parents, vaccinations, remarks, stations, inventory, vaccine deletions, announcements, and QR settings.
+- **Header:** the bell shows the admin's own alerts (e.g. low stock); the gear opens Change Password / Operating Hours / Log out (both did nothing before). The sidebar shows the real admin's name instead of a placeholder.
+
+## 6. Automatic features (run by the server)
+
+- **Every morning at 8:00**, reminders and follow-ups go to every linked parent who accepts notifications, in the app, by email and by SMS. They use:
+  - the same due dates the app shows (before, the reminders computed their own dates, assuming Mon/Wed/Fri clinic days);
+  - the clinic's real days and hours in the message.
+- **Out-of-stock check** at the same time (see §1).
+- **Birth-date correction:** the whole remaining schedule is recalculated.
+
+## 7. Security
+
+- The API refuses any request without a valid login, except Login and Forgot Password.
+- Role rules on the server, not just hidden buttons:
+  - only the Admin manages accounts, vaccines, schedule rules, clinic hours and announcements;
+  - only Staff/Admin register families and run the queue and stations;
+  - only Doctors/Nurses record vaccinations and remarks.
+- A parent can only open their own profile, children, records, notifications and queue ticket (tested: other families' data returns "403 Forbidden").
+- Passwords are stored as BCrypt hashes; reset codes are hashed too; 5 wrong logins lock an account for 15 minutes.
+- Demo accounts never receive real emails or texts, because their made-up numbers could belong to real people.
+
+## 8. Database
+
+- A backup was made first: `ArugaSystemDB_before_cleanup_2026-09-26.bak` in SQL Server's Backup folder.
+- `backend/Database/Cleanup_2026-09.sql` (already run on this laptop):
+  - removed unused tables: `Queue` (old), `Personnel`, `Staff`, `PasswordOtps`, `PasswordResetTokens`, and an unused stored procedure;
+  - removed copies of the same rule (3× the same foreign keys, 3× "unique email", 3× "unique username", 3× the same check) and gave keys readable names;
+  - removed the Doctor Diagnosis columns (any text would have been copied into Remarks first; there was none);
+  - added the QR check-in tables, the Forgot Password codes table, and `VaccineInventory.ManufacturingDate`;
+  - admins now have UserType "Administrator" (was "Admission");
+  - station names can be up to 50 characters;
+  - indexes for the most common searches;
+  - freed stale busy stations, and left each worker on one station only.
+- `backend/Database/Schema.sql` (new): builds the complete database from nothing on a new computer.
+  - Includes the vaccines, schedule rules, clinic hours, Room 1–3, and an `admin / Admin@2026` account.
+  - Tested: it produces exactly the same structure as the cleaned database.
+- `DemoSeed.sql` / `DemoSeed_Remove.sql`: sample data for demos and the beneficiary test (see `backend/Database/README.md`).
+- The scripts are saved so that special characters (–, ½) come out right in SSMS and sqlcmd.
+
+## 9. Other bugs fixed
+
+- Check-ins sometimes looked like they failed (the server saved them, then crashed while replying).
+- An admin changing their password on first login could be sent to the Staff dashboard.
+- Change Password showed "Can't reach the server" for a wrong current password.
+- A date helper on Patient Records converted dates to UTC, which moves Philippine dates one day earlier.
+- Notification messages with several lines showed as one run-on line.
+- The backend printed a password hash to the console on every start (removed); the console no longer floods with database queries, so important messages are readable.
+
+## 10. Removed (all still in git history)
+
+- The Doctor folder (merged into Healthcare) and `HealtcareSidebar.vue` (misspelled duplicate).
+- Unused files that called API routes that don't exist:
+  - `Login/Admin.vue`, `Login/StaffLogin.vue`, `Login/ParentManager.vue`, `Login/PageA.vue`, `Login/PageB.Vue`
+  - `Admin/AdminHomepage.vue`, `SystemAdmin/PrintableRecord.vue`, `services/api.js`
+  - `Staff/StaffChildRecord.vue`, `Staff/StaffParentRecord.vue`
+- Backend models for the removed tables (`Personnel`, `Staff`, `BaseClass`) and `UpdateDiagnosisDto`.
+
+## 11. How to run and test
+
+1. Database: see `backend/Database/README.md`. This laptop is already done.
+2. Backend: copy `backend/appsettings.example.json` → `appsettings.json` (keep your own connection string), then `dotnet run` in `backend`. **Restart it** after pulling these changes.
+3. Frontend: `npm run dev` in `frontend`, open http://localhost:5173.
+4. Demo logins (password `Aruga@2026`):
+   - `demo.admin`, `demo.doctor`, `demo.nurse`, `demo.nurse2`, `demo.staff`
+   - parents such as `maria.santos@demo.aruga.ph`
+5. Run `DemoSeed.sql` **on the morning of the defense**, on a clinic day. On a weekend nothing is "due today" and check-in is closed; to demo on a closed day, add it under Operating Hours → Add Exception.
+6. To turn on real emails, create a Gmail **App Password** for the clinic account and put it in `appsettings.json` (steps in `backend/README.md`). For free SMS, set up TextBee on the clinic's Android phone (same file). Until then, messages (including reset codes) are printed in the backend console window.
+
+## 12. Things to update in your documentation
+
+- Doctor Diagnosis → **Remarks** (Figure 20 already describes remarks).
+- The **station** flow: staff assign a worker per station → patient is sent to a station → only that worker records the vaccine.
+- QR check-in as built: a daily clinic QR + 6-letter code, optional per clinic.
+- The paper says database operations use **stored procedures** and the backend uses **Node.js and C#**. The system actually uses C# (ASP.NET Core) with Entity Framework and Dapper, and no stored procedures.
+- The scope mentions **growth charts** and **intake/triage forms**. The system stores birth height and weight only; there are no growth charts.
+- Midwife is not a role.

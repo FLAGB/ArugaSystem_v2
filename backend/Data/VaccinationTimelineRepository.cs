@@ -274,6 +274,66 @@ public async Task<IEnumerable<VaccinationTimeline>> GetUpcomingAsync(int days)
         .ToListAsync();
 }
 
+// Recomputes every dose that hasn't been given yet, the same way the
+// recalculation engine does after a vaccination: a dose is due at the
+// recommended age, but never sooner than 28 days (or the rule's interval)
+// after the previous dose of the same vaccine, then moved to the next open
+// clinic day. Used when a child's birth date is corrected.
+public async Task RescheduleChildAsync(Guid childId)
+{
+    const int MinimumDoseIntervalDays = 28;
+
+    var child = await _context.Children.FirstOrDefaultAsync(c => c.ChildID == childId);
+    if (child == null) return;
+
+    var timelines = await _context.VaccinationTimelines
+        .Where(t => t.ChildID == childId && t.Status != "Cancelled")
+        .ToListAsync();
+    var rules = await _context.VaccinationScheduleRules.ToListAsync();
+    var records = await _context.VaccinationRecords
+        .Where(r => r.ChildID == childId && r.Status == "Completed")
+        .ToListAsync();
+
+    foreach (var vaccine in timelines.GroupBy(t => t.VaccineID))
+    {
+        DateTime? previous = null;
+
+        foreach (var timeline in vaccine.OrderBy(t => t.DoseNumber))
+        {
+            var rule = rules.FirstOrDefault(r => r.VaccineID == timeline.VaccineID && r.DoseNumber == timeline.DoseNumber);
+            var ageBased = child.BirthDate.Date.AddDays(rule?.RecommendedAgeDays ?? 0);
+
+            if (timeline.Status == "Completed")
+            {
+                timeline.ExpectedDate = ageBased;
+                previous = timeline.CompletedDate
+                    ?? records.FirstOrDefault(r => r.VaccineID == timeline.VaccineID && r.DoseNumber == timeline.DoseNumber)?.VaccinationDate.Date
+                    ?? timeline.ScheduledDate;
+                continue;
+            }
+
+            var due = ageBased;
+            if (previous != null)
+            {
+                var interval = Math.Max(rule?.IntervalFromPreviousDoseDays ?? 0, MinimumDoseIntervalDays);
+                var fromPrevious = previous.Value.AddDays(interval);
+                if (fromPrevious > due) due = fromPrevious;
+            }
+
+            var scheduled = await AndroidWebAPI.Services.ClinicCalendar.NextOpenDayAsync(_context, due);
+
+            timeline.ExpectedDate = ageBased;
+            timeline.ScheduledDate = scheduled;
+            timeline.Status = scheduled < DateTime.Today ? "Missed" : "Pending";
+            timeline.UpdatedAt = DateTime.UtcNow;
+
+            previous = scheduled;
+        }
+    }
+
+    await _context.SaveChangesAsync();
+}
+
 public async Task RegenerateTimelineAsync(Guid childId)
 {
     // Get the child

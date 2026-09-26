@@ -12,13 +12,16 @@ namespace AndroidWebAPI.Controllers
     {
         private readonly IAccountRepository _accountRepository;
         private readonly AppDbContext _context;
+        private readonly AndroidWebAPI.Services.AuditService _audit;
 
         public AccountsController(
             IAccountRepository accountRepository,
-            AppDbContext context)
+            AppDbContext context,
+            AndroidWebAPI.Services.AuditService audit)
         {
             _accountRepository = accountRepository;
             _context = context;
+            _audit = audit;
         }
 
         // =========================================================
@@ -27,6 +30,7 @@ namespace AndroidWebAPI.Controllers
         // Joins Accounts with Parents / Users depending on AccountType.
         // =========================================================
 
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpGet]
         public async Task<IActionResult> GetAllAccounts()
         {
@@ -47,6 +51,7 @@ namespace AndroidWebAPI.Controllers
                     result.Add(new
                     {
                         accountID = account.AccountID,
+                        referenceID = account.ReferenceID,
                         firstName = parent.FirstName,
                         middleName = parent.MiddleName,
                         lastName = parent.LastName,
@@ -66,13 +71,17 @@ namespace AndroidWebAPI.Controllers
                     result.Add(new
                     {
                         accountID = account.AccountID,
+                        referenceID = account.ReferenceID,
                         firstName = user.FirstName,
                         middleName = user.MiddleName,
                         lastName = user.LastName,
                         username = account.Username,
                         email = user.Email,
                         contactNo = user.ContactNo,
-                        role = user.UserType,
+                        // Position is the real role (Doctor / Nurse / Staff /
+                        // Administrator); UserType is a legacy column whose
+                        // values ("Admission", ...) don't match the UI's roles.
+                        role = string.IsNullOrWhiteSpace(user.Position) ? user.UserType : user.Position,
                         status = account.Status ? "Active" : "Inactive",
                         mustChangePassword = account.MustChangePassword,
                         lastLogin = account.LastLogin,
@@ -90,9 +99,11 @@ namespace AndroidWebAPI.Controllers
         // POST /api/accounts/personnel
         // =========================================================
 
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpPost("personnel")]
 public async Task<IActionResult> CreatePersonnelAccount(
-    [FromBody] CreatePersonnelAccountDto dto)
+    [FromBody] CreatePersonnelAccountDto dto,
+    [FromServices] AndroidWebAPI.Services.MessageSender sender)
 {
     if (string.IsNullOrWhiteSpace(dto.FirstName))
         return BadRequest(new { message = "First name is required." });
@@ -143,9 +154,13 @@ public async Task<IActionResult> CreatePersonnelAccount(
         Email = dto.Email,
         ContactNo = dto.ContactNo,
         Address = dto.Address,
+        // dbo.Users has a CHECK constraint allowing only
+        // 'Doctor' | 'Nurse' | 'Admission' | 'Request' here — writing
+        // "Healthcare"/"Staff" made every account creation fail. Position
+        // (below) is what login actually uses to pick the portal.
         UserType = dto.Role == "Staff"
-        ? "Staff"
-        : "Healthcare",
+        ? "Admission"
+        : dto.Role,
 Position = dto.Role,
         PRCNo = dto.LicenseNumber,
         AccountStatus = "Active"
@@ -177,6 +192,18 @@ Position = dto.Role,
 
     await _accountRepository.CreateAsync(account);
 
+    await _audit.LogAsync("User Management", "Create",
+        $"{dto.Role} Account – {user.FirstName} {user.LastName}",
+        $"Created a new {dto.Role} account (username {username}).",
+        newValue: $"Status: Active, Role: {dto.Role}");
+
+    // Sign-in details to the new staff member (the admin also sees them)
+    bool emailed = await sender.SendEmailAsync(dto.Email, "Your Aruga staff account",
+        $"Hi {dto.FirstName},\n\nAn Aruga account was created for you at Leveriza Health Center " +
+        $"({(dto.Role == "Staff" ? "Admission Staff" : dto.Role)}).\n\n" +
+        $"Username: {username}\nTemporary password: {temporaryPassword}\n\n" +
+        "You'll be asked to choose your own password the first time you sign in.");
+
     // =========================================================
     // RETURN GENERATED CREDENTIALS
     // =========================================================
@@ -203,7 +230,8 @@ Position = dto.Role,
             user.Address
         },
 
-        temporaryPassword
+        temporaryPassword,
+        emailed
     });
 }
 
@@ -216,6 +244,7 @@ Position = dto.Role,
         // Active / Inactive only.
         // =========================================================
 
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpPatch("{id}/status")]
         public async Task<IActionResult> UpdateStatus(
             Guid id,
@@ -226,10 +255,17 @@ Position = dto.Role,
             if (account == null)
                 return NotFound(new { message = "Account not found." });
 
+            bool previous = account.Status;
             account.Status = dto.Status;
             account.UpdatedAt = DateTime.Now;
 
             await _accountRepository.UpdateAsync(account);
+
+            await _audit.LogAsync("User Management", dto.Status ? "Activate" : "Deactivate",
+                $"Account – {account.Username}",
+                dto.Status ? "Activated a user account." : "Deactivated a user account.",
+                oldValue: $"Status: {(previous ? "Active" : "Inactive")}",
+                newValue: $"Status: {(dto.Status ? "Active" : "Inactive")}");
 
             return Ok(new
             {
@@ -244,8 +280,9 @@ Position = dto.Role,
         // Admin-triggered reset. Forces MustChangePassword back to true.
         // =========================================================
 
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
         [HttpPost("{id}/reset-password")]
-        public async Task<IActionResult> ResetPassword(Guid id)
+        public async Task<IActionResult> ResetPassword(Guid id, [FromServices] AndroidWebAPI.Services.MessageSender sender)
         {
             var account = await _accountRepository.GetByIdAsync(id);
 
@@ -260,11 +297,26 @@ Position = dto.Role,
 
             await _accountRepository.UpdateAsync(account);
 
+            await _audit.LogAsync("User Management", "Reset Password",
+                $"Account – {account.Username}",
+                "Reset the account password to a temporary one (must be changed on next login).");
+
+            // Tell the owner their temporary password, by email
+            string? email = account.AccountType == "Parent"
+                ? await _context.Parents.Where(p => p.ParentID == account.ReferenceID).Select(p => p.Email).FirstOrDefaultAsync()
+                : await _context.Users.Where(u => u.UserID == account.ReferenceID).Select(u => u.Email).FirstOrDefaultAsync();
+            bool emailed = await sender.SendEmailAsync(email, "Your Aruga password was reset",
+                $"The administrator reset the password for your Aruga account ({account.Username}).\n\n" +
+                $"Temporary password: {temporaryPassword}\n\n" +
+                "You'll be asked to choose your own password the next time you sign in. " +
+                "If you didn't ask for this, please contact Leveriza Health Center.");
+
             return Ok(new
             {
                 message = "Password reset successfully.",
                 accountID = account.AccountID,
-                temporaryPassword
+                temporaryPassword,
+                emailed
             });
         }
 

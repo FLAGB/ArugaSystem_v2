@@ -12,6 +12,7 @@ import {
   Package,
   Bell,
   Clock,
+  DoorOpen,
   BarChart3,
   ClipboardList,
   LogOut,
@@ -33,25 +34,16 @@ const props = defineProps({
       { label: 'Inventory',          icon: Package,       to: '/system-admin/inventory' },
       { label: 'Notifications',      icon: Bell,          to: '/system-admin/notifications' },
       { label: 'Operating Hours',    icon: Clock,         to: '/system-admin/operating-hours' },
+      { label: 'Vaccination Rooms',  icon: DoorOpen,      to: '/system-admin/rooms' },
       { label: 'Reports',            icon: BarChart3,     to: '/system-admin/reports' },
       { label: 'Audit Logs',         icon: ClipboardList, to: '/system-admin/audit-logs' },
     ]),
   },
 
-  userName: {
-    type: String,
-    default: 'Renzo Miguel',
-  },
-
-  userRole: {
-    type: String,
-    default: 'System Admin',
-  },
-
-  userInitials: {
-    type: String,
-    default: 'RM',
-  },
+  // Optional overrides; by default the signed-in account is shown
+  userName: { type: String, default: '' },
+  userRole: { type: String, default: '' },
+  userInitials: { type: String, default: '' },
 })
 
 const account = computed(() => {
@@ -64,67 +56,27 @@ const account = computed(() => {
 
 const loggedInUser = computed(() => account.value?.user || {})
 
+// Login.vue stores FirstName / LastName (PascalCase); accept both spellings
+const firstName = computed(() => loggedInUser.value.FirstName || loggedInUser.value.firstName || '')
+const lastName = computed(() => loggedInUser.value.LastName || loggedInUser.value.lastName || '')
+
 const displayName = computed(() => {
-
-  // System Admin does not have a normal user record
-  if (account.value?.role === 'SystemAdmin') {
-    return 'System Admin'
-  }
-
-  const firstName = loggedInUser.value.firstName
-  const middleName = loggedInUser.value.middleName
-  const lastName = loggedInUser.value.lastName
-
-  const fullName = [
-    firstName,
-    middleName,
-    lastName
-  ]
-    .filter(Boolean)
-    .join(' ')
-
-  if (fullName) {
-    return fullName
-  }
-
-  if (loggedInUser.value.username) {
-    return loggedInUser.value.username
-  }
-
-  return account.value?.username || 'User'
+  if (props.userName) return props.userName
+  const fullName = [firstName.value, lastName.value].filter(Boolean).join(' ')
+  return fullName || loggedInUser.value.username || 'Administrator'
 })
 
 const displayRole = computed(() => {
-  const role = account.value?.role
-
-  if (role === 'Healthcare') {
-    if (loggedInUser.value.position) {
-      return `Healthcare • ${loggedInUser.value.position}`
-    }
-
-    return 'Healthcare'
-  }
-
-  if (role === 'SystemAdmin') {
-    return 'System Admin'
-  }
-
-  return role || 'User'
+  if (props.userRole) return props.userRole
+  const position = loggedInUser.value.UserType || loggedInUser.value.position
+  if (account.value?.role === 'SystemAdmin') return 'System Administrator'
+  return position || account.value?.role || 'User'
 })
 
 const displayInitials = computed(() => {
-  const first = loggedInUser.value.firstName?.[0] || ''
-  const last = loggedInUser.value.lastName?.[0] || ''
-
-  if (first || last) {
-    return `${first}${last}`.toUpperCase()
-  }
-
-  if (account.value?.role === 'SystemAdmin') {
-    return 'SA'
-  }
-
-  return 'U'
+  if (props.userInitials) return props.userInitials
+  const initials = `${firstName.value[0] || ''}${lastName.value[0] || ''}`.toUpperCase()
+  return initials || 'SA'
 })
 
 function handleLogout() {

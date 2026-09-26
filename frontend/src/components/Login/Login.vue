@@ -1,12 +1,22 @@
 <script setup>
 import logoIcon from "@/assets/logo-icon.svg"
 import { ref, computed } from "vue"
-import { useRouter } from "vue-router"
+import { useRouter, useRoute } from "vue-router"
 import axios from "axios"
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:57147'}/api/auth`
 
 const router = useRouter()
+const route = useRoute()
+
+// Set when the router sent the person here from a page that needs a login
+// (e.g. the clinic check-in QR), so we can take them back afterwards.
+function redirectTarget() {
+  const target = route.query.redirect
+  return typeof target === "string" && target.startsWith("/") && !target.startsWith("//") ? target : null
+}
+
+const sessionNote = route.query.expired ? "Your session expired. Please sign in again." : ""
 
 // =====================================================
 // FORM STATE
@@ -31,16 +41,21 @@ const canSubmit = computed(() =>
 // ROLE REDIRECTION
 // =====================================================
 
-function redirectForRole(role, userType) {
+function redirectForRole(role) {
+  const target = redirectTarget()
+  if (target) {
+    router.push(target)   // the router guard still checks the role
+    return
+  }
+
   switch (role) {
     case "Parent":
       router.push("/ParentOverview")
       break
 
     case "Healthcare":
-      // Doctor and Nurse/Midwife share the 'Healthcare' role — UserType
-      // is what actually tells them apart.
-      router.push(userType === "Doctor" ? "/doctor/home" : "/healthcare/home")
+      // Doctors and Nurses share the same Healthcare Worker portal.
+      router.push("/healthcare/home")
       break
 
     case "Staff":
@@ -102,13 +117,16 @@ const handleLogin = async () => {
       // previously storing the literal string "undefined".
       localStorage.setItem("parentUser", JSON.stringify(p))
 
-      router.push(data.mustChangePassword ? "/ChangePassword" : "/ParentOverview")
+      if (data.mustChangePassword) router.push("/ChangePassword")
+      else redirectForRole("Parent")
       return
     }
 
     if (data.accountType === "Personnel") {
       const u = data.user
-      const userType = u.userType // 'Admission' | 'Admin' | 'Staff' | 'Doctor' | 'Nurse' | 'Midwife'
+      // Position is the real job title (Doctor / Nurse / Staff /
+      // Administrator); UserType is a legacy column, used only as a fallback.
+      const userType = u.position || u.userType
 
       // The backend already computes the coarse role (Staff vs Healthcare)
       // from the user's Position — trust that instead of re-deriving it
@@ -270,6 +288,10 @@ const handleLogin = async () => {
           >
             Forgot password?
           </button>
+        </div>
+
+        <div v-if="sessionNote && !errorMessage" class="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <p class="text-amber-700 text-sm">{{ sessionNote }}</p>
         </div>
 
         <!-- ERROR -->

@@ -1,1187 +1,897 @@
 <template>
-    <div class="flex h-screen bg-slate-50 font-sans antialiased text-slate-900">
+  <div class="flex h-screen bg-slate-50 font-sans antialiased text-slate-900">
 
-        <HealthcareSidebar @logout="logout" />
+    <HealthcareSidebar />
 
-        <div class="flex flex-col flex-1 overflow-hidden">
-        <HealthcareHeader :worker="worker" title="Patients (Children)" />
+    <!-- MAIN -->
+    <div class="flex flex-col flex-1 overflow-hidden">
 
-        <main class="flex-1 overflow-y-auto p-6">
+      <!-- TOP BAR -->
+      <HealthcareHeader />
 
-            <!-- ═══════════════════════ CHILD RECORD VIEW ═══════════════════════ -->
-            <template v-if="selectedChild">
+      <!-- PAGE CONTENT -->
+      <main class="flex-1 overflow-y-auto p-6">
 
-    <!-- BACK -->
-    <button
-        @click="closeRecord"
-        class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-4 transition-colors"
-    >
-        <ArrowLeft class="w-4 h-4" />
-        Back to Patients
-    </button>
+        <template v-if="selectedChild">
 
-    <!-- TOP RECORD LAYOUT -->
-    <div class="grid grid-cols-3 gap-5">
-
-        <!-- ================= PROFILE CARD ================= -->
-        <div class="bg-white rounded-xl border border-slate-200 p-5">
-
-            <div
-                class="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white mb-3"
-                :style="{ backgroundColor: avatarColor(selectedChild.name) }"
+          <div class="flex items-center justify-between mb-4">
+            <button
+              @click="closeRecord"
+              class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors"
             >
-                {{ initials(selectedChild.name) }}
-            </div>
+              <ArrowLeft class="w-4 h-4" />
+              Back to Patients
+            </button>
+            <a :href="`/print/vaccination-card/${selectedChild.childID}`" target="_blank"
+              class="text-xs border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg font-medium transition-colors">
+              Print Vaccination Card
+            </a>
+          </div>
 
-            <h2 class="text-lg font-bold text-slate-800">
-                {{ selectedChild.name }}
-            </h2>
+          <div class="grid grid-cols-3 gap-5">
 
-            <p class="text-sm text-slate-400">
-                {{ selectedChild.ageLabel || '—' }}
+            <!-- ================= PROFILE CARD ================= -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+
+              <div
+                class="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white mb-3"
+                :style="{ backgroundColor: avatarColor(selectedChild.fullName) }"
+              >
+                {{ initials(selectedChild.fullName) }}
+              </div>
+
+              <h2 class="text-lg font-bold text-slate-800">
+                {{ selectedChild.fullName }}
+              </h2>
+
+              <p class="text-sm text-slate-400">
+                {{ selectedChild.age || '—' }}
                 ·
                 {{ selectedChild.sex || '—' }}
                 <template v-if="selectedChild.parentName && selectedChild.parentName !== '—'">
-                    · Parent: {{ selectedChild.parentName }}
+                  · Parent: {{ selectedChild.parentName }}
                 </template>
-            </p>
+              </p>
 
-            <div class="mt-4 space-y-4 text-sm">
+              <div class="mt-4 space-y-4 text-sm">
 
-                <!-- Birthdate -->
                 <div class="flex items-start gap-2.5">
-                    <Cake class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-
-                    <div>
-                        <p class="text-xs text-slate-400">
-                            Birthdate
-                        </p>
-
-                        <p class="text-slate-700">
-                            {{
-                                selectedChild.dateOfBirth
-                                    ? formatDate(selectedChild.dateOfBirth)
-                                    : '—'
-                            }}
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Barangay -->
-                <div class="flex items-start gap-2.5">
-                    <MapPin class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-
-                    <div>
-                        <p class="text-xs text-slate-400">
-                            Barangay
-                        </p>
-
-                        <p class="text-slate-700">
-                            {{ selectedChild.barangayNo || '—' }}
-                        </p>
-                    </div>
-                </div>
-
-                <!-- PRIMARY CONTACT -->
-                <div class="flex items-start gap-2.5">
-                    <Phone class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-
-                    <div>
-                        <p class="text-xs text-slate-400">
-                            Primary Contact No.
-                        </p>
-
-                        <p class="text-slate-700">
-                            {{ selectedChild.primaryContactNo || 'Not available' }}
-                        </p>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-
-
-        <!-- ================= MEDICAL RECORDS ================= -->
-        <div class="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
-
-            <div class="flex items-center justify-between mb-5">
-
-                <div>
-                    <h3 class="font-semibold text-slate-800">
-                        Medical Records
-                    </h3>
-
-                    <p class="text-xs text-slate-400 mt-0.5">
-                        Medical information and health measurements
+                  <Cake class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p class="text-xs text-slate-400">Birthdate</p>
+                    <p class="text-slate-700">
+                      {{ selectedChild.birthDate ? formatDate(selectedChild.birthDate) : '—' }}
                     </p>
+                  </div>
                 </div>
 
+                <div class="flex items-start gap-2.5">
+                  <MapPin class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p class="text-xs text-slate-400">Barangay</p>
+                    <p class="text-slate-700">{{ selectedChild.barangay || '—' }}</p>
+                  </div>
+                </div>
+
+                <div class="flex items-start gap-2.5">
+                  <Phone class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p class="text-xs text-slate-400">Primary Contact No.</p>
+                    <p class="text-slate-700">{{ selectedChild.primaryContactNo || 'Not available' }}</p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ================= MEDICAL RECORDS ================= -->
+            <div class="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
+
+              <div class="flex items-center justify-between mb-5">
+                <div>
+                  <h3 class="font-semibold text-slate-800">Medical Records</h3>
+                  <p class="text-xs text-slate-400 mt-0.5">Medical information and health measurements</p>
+                </div>
                 <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    <HeartPulse class="w-4 h-4 text-emerald-600" />
+                  <HeartPulse class="w-4 h-4 text-emerald-600" />
                 </div>
+              </div>
 
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <p class="text-xs text-slate-400 mb-1.5">Allergies</p>
+                  <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
+                    {{ selectedChild.allergies || 'None reported' }}
+                  </div>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-400 mb-1.5">Existing Conditions</p>
+                  <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
+                    {{ selectedChild.existingConditions || 'None reported' }}
+                  </div>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-400 mb-1.5">Birth Height</p>
+                  <div class="px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
+                    {{ selectedChild.birthHeight || 'Not available' }}
+                  </div>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-400 mb-1.5">Birth Weight</p>
+                  <div class="px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
+                    {{ selectedChild.birthWeight || 'Not available' }}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-
-                <!-- Allergies -->
+            <!-- ================= PATIENT DETAILS ================= -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 class="font-semibold text-slate-800 mb-4">Patient Details</h3>
+              <div class="space-y-3 text-sm">
                 <div>
-                    <p class="text-xs text-slate-400 mb-1.5">
-                        Allergies
-                    </p>
-
-                    <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
-                        {{ selectedChild.allergies || 'None reported' }}
-                    </div>
+                  <p class="text-xs text-slate-400">Full Name</p>
+                  <p class="text-slate-700">{{ selectedChild.fullName }}</p>
                 </div>
-
-                <!-- Existing Conditions -->
                 <div>
-                    <p class="text-xs text-slate-400 mb-1.5">
-                        Existing Conditions
-                    </p>
-
-                    <div class="min-h-[48px] px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
-                        {{ selectedChild.existingConditions || 'None reported' }}
-                    </div>
+                  <p class="text-xs text-slate-400">Sex</p>
+                  <p class="text-slate-700">{{ selectedChild.sex || '—' }}</p>
                 </div>
-
-                <!-- Birth Height -->
                 <div>
-                    <p class="text-xs text-slate-400 mb-1.5">
-                        Birth Height
-                    </p>
-
-                    <div class="px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
-                        {{ selectedChild.birthHeight || 'Not available' }}
-                    </div>
+                  <p class="text-xs text-slate-400">Age</p>
+                  <p class="text-slate-700">{{ selectedChild.age || '—' }}</p>
                 </div>
-
-                <!-- Birth Weight -->
                 <div>
-                    <p class="text-xs text-slate-400 mb-1.5">
-                        Birth Weight
-                    </p>
-
-                    <div class="px-3 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-sm text-slate-700">
-                        {{ selectedChild.birthWeight || 'Not available' }}
-                    </div>
+                  <p class="text-xs text-slate-400 mb-1">Vaccine Status</p>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="statusClass(selectedChild.vaccineStatus)">
+                    {{ selectedChild.vaccineStatus }}
+                  </span>
                 </div>
-
+              </div>
             </div>
 
-            <div class="flex items-start gap-2 mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500">
+            <!-- ================= NEXT VACCINATION ================= -->
+            <div class="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-slate-800">Next Vaccination</h3>
+                <button @click="attemptVaccinateFromSearch(selectedChild)" title="Opens the vaccination visit when this child is at your station"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+                  <Syringe class="w-3.5 h-3.5" /> Record Vaccine
+                </button>
+              </div>
 
-                <Info class="w-4 h-4 shrink-0 mt-0.5" />
-
-                <span>
-                    Additional medical information and growth measurements
-                    will appear here when available.
-                </span>
-
-            </div>
-
-        </div>
-
-
-        <!-- ================= EMPTY LEFT AREA / PROFILE EXTENSION ================= -->
-        <div class="bg-white rounded-xl border border-slate-200 p-5">
-
-            <h3 class="font-semibold text-slate-800 mb-4">
-                Patient Details
-            </h3>
-
-            <div class="space-y-3 text-sm">
-
+              <div v-if="selectedChild.nextDueDate" class="grid grid-cols-3 gap-4">
                 <div>
-                    <p class="text-xs text-slate-400">
-                        Full Name
-                    </p>
-
-                    <p class="text-slate-700">
-                        {{ selectedChild.name }}
-                    </p>
+                  <p class="text-xs text-slate-400">Vaccine</p>
+                  <p class="font-semibold text-slate-800 mt-1">{{ selectedChild.nextVaccineName }}</p>
                 </div>
-
                 <div>
-                    <p class="text-xs text-slate-400">
-                        Sex
-                    </p>
-
-                    <p class="text-slate-700">
-                        {{ selectedChild.sex || '—' }}
-                    </p>
+                  <p class="text-xs text-slate-400">Scheduled Date</p>
+                  <p class="text-sm text-slate-700 mt-1">{{ formatDate(selectedChild.nextDueDate) }}</p>
                 </div>
-
                 <div>
-                    <p class="text-xs text-slate-400">
-                        Age
-                    </p>
-
-                    <p class="text-slate-700">
-                        {{ selectedChild.ageLabel || '—' }}
-                    </p>
+                  <p class="text-xs text-slate-400">Status</p>
+                  <span class="inline-flex mt-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700">
+                    {{ selectedChild.vaccineStatus }}
+                  </span>
                 </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- ================= NEXT VACCINATION ================= -->
-        <div class="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
-
-            <h3 class="font-semibold text-slate-800 mb-4">
-                Next Vaccination
-            </h3>
-
-            <!-- Loading -->
-            <div
-                v-if="loadingHistory"
-                class="flex items-center gap-2 text-sm text-slate-400"
-            >
-                <Loader2 class="w-4 h-4 animate-spin" />
-                Loading schedule...
-            </div>
-
-            <!-- Next vaccine -->
-            <div
-                v-else-if="selectedChild.nextDueDate"
-                class="grid grid-cols-3 gap-4"
-            >
-
-                <div>
-                    <p class="text-xs text-slate-400">
-                        Vaccine
-                    </p>
-
-                    <p class="font-semibold text-slate-800 mt-1">
-                        {{ selectedChild.nextVaccineName }}
-                    </p>
-                </div>
-
-                <div>
-                    <p class="text-xs text-slate-400">
-                        Scheduled Date
-                    </p>
-
-                    <p class="text-sm text-slate-700 mt-1">
-                        {{ formatDate(selectedChild.nextDueDate) }}
-                    </p>
-                </div>
-
-                <div>
-                    <p class="text-xs text-slate-400">
-                        Status
-                    </p>
-
-                    <span
-                        class="inline-flex mt-1 px-2.5 py-1 rounded-full text-xs font-medium"
-                        :class="statusClass(selectedChild.vaccineStatus)"
-                    >
-                        {{ selectedChild.vaccineStatus }}
-                    </span>
-                </div>
-
-            </div>
-
-            <!-- No pending vaccine -->
-            <div
-                v-else
-                class="text-sm"
-                :class="selectedChild.vaccineStatus === 'Completed' ? 'text-emerald-600 font-medium' : 'text-slate-400'"
-            >
+              </div>
+              <div v-else class="text-sm text-slate-400">
                 {{ selectedChild.vaccineStatus === 'Completed' ? 'Series complete.' : 'No upcoming vaccination scheduled.' }}
+              </div>
             </div>
 
-        </div>
+          </div>
 
-    </div>
+          <!-- ================= VACCINATION PROGRESS / WHAT'S NEXT ================= -->
+          <div class="mt-5 bg-white rounded-xl border border-slate-200">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 class="font-semibold text-slate-800">Remaining Schedule</h3>
+                <p class="text-xs text-slate-400 mt-0.5">Doses still to be given, with the dates the system has scheduled</p>
+              </div>
+              <span class="text-xs font-semibold text-emerald-700">
+                {{ selectedChild.completedCount ?? 0 }} of {{ selectedChild.totalDoses ?? 0 }} doses completed
+              </span>
+            </div>
+            <div class="px-5 pt-4">
+              <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div class="h-full bg-emerald-500 rounded-full"
+                  :style="{ width: (selectedChild.totalDoses ? (selectedChild.completedCount / selectedChild.totalDoses) * 100 : 0) + '%' }"></div>
+              </div>
+            </div>
+            <div v-if="remainingDoses.length === 0" class="px-5 py-6 text-sm text-slate-400">
+              {{ loadingChildRecords ? 'Loading...' : 'No remaining doses — the vaccination series is complete.' }}
+            </div>
+            <div v-else class="p-5 grid grid-cols-2 lg:grid-cols-3 gap-2">
+              <div v-for="d in remainingDoses" :key="d.timelineID"
+                class="flex items-center justify-between rounded-lg border px-3 py-2.5"
+                :class="d.label === 'Overdue' ? 'border-red-100 bg-red-50/50' : d.label === 'Due Today' ? 'border-amber-100 bg-amber-50/50' : 'border-slate-100'">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-slate-800 truncate">{{ d.vaccineName }} — Dose {{ d.doseNumber }}</p>
+                  <p class="text-xs text-slate-500">{{ formatDate(d.scheduledDate) }}</p>
+                </div>
+                <span class="text-[11px] font-semibold shrink-0 ml-2"
+                  :class="d.label === 'Overdue' ? 'text-red-600' : d.label === 'Due Today' ? 'text-amber-600' : 'text-slate-400'">
+                  {{ d.label }}
+                </span>
+              </div>
+            </div>
+          </div>
 
+          <!-- ================= VACCINATION HISTORY ================= -->
+          <div class="mt-5 bg-white rounded-xl border border-slate-200">
 
-    <!-- ================= VACCINATION HISTORY ================= -->
-    <div class="mt-5 bg-white rounded-xl border border-slate-200">
+            <div class="px-5 py-4 border-b border-slate-100">
+              <h3 class="font-semibold text-slate-800">Vaccination History</h3>
+              <p class="text-xs text-slate-400 mt-0.5">Doses already given — check observations for past adverse reactions</p>
+            </div>
 
-        <div class="px-5 py-4 border-b border-slate-100">
+            <div v-if="loadingChildRecords" class="flex items-center justify-center py-10">
+              <Loader2 class="w-5 h-5 animate-spin text-slate-400" />
+            </div>
 
-            <h3 class="font-semibold text-slate-800">
-                Vaccination History
-            </h3>
+            <div v-else-if="childRecords.length === 0" class="flex flex-col items-center justify-center py-10 text-slate-400">
+              <Syringe class="w-7 h-7 mb-2 opacity-40" />
+              <p class="text-sm">No vaccination records yet</p>
+            </div>
 
-        </div>
-
-        <!-- Loading -->
-        <div
-            v-if="loadingHistory"
-            class="flex items-center justify-center py-10"
-        >
-            <Loader2 class="w-5 h-5 animate-spin text-slate-400" />
-        </div>
-
-        <!-- Error -->
-        <div
-            v-else-if="historyError"
-            class="flex items-start gap-2 m-5 p-3 bg-red-50 border border-red-100 rounded-lg text-sm text-red-700"
-        >
-            <AlertCircle class="w-4 h-4 shrink-0" />
-
-            <span>
-                {{ historyError }}
-            </span>
-        </div>
-
-        <!-- Empty -->
-        <div
-            v-else-if="history.length === 0"
-            class="flex flex-col items-center justify-center py-10 text-slate-400"
-        >
-            <Syringe class="w-7 h-7 mb-2 opacity-40" />
-
-            <p class="text-sm">
-                No vaccination records yet
-            </p>
-        </div>
-
-        <!-- History -->
-        <div
-            v-else
-            class="overflow-x-auto"
-        >
-
-            <table class="w-full text-sm">
-
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-sm">
                 <thead>
-                    <tr class="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-100">
-
-                        <th class="px-5 py-2.5 text-left font-medium">
-                            Vaccine
-                        </th>
-
-                        <th class="px-5 py-2.5 text-left font-medium">
-                            Dose
-                        </th>
-
-                        <th class="px-5 py-2.5 text-left font-medium">
-                            Date
-                        </th>
-
-                        <th class="px-5 py-2.5 text-left font-medium">
-                            Administered By
-                        </th>
-
-                        <th class="px-5 py-2.5 text-left font-medium">
-                            Observation
-                        </th>
-
-                        <th class="px-5 py-2.5 text-left font-medium">
-                            Doctor Diagnosis
-                        </th>
-
-                    </tr>
+                  <tr class="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                    <th class="px-5 py-2.5 text-left font-medium">Vaccine</th>
+                    <th class="px-5 py-2.5 text-left font-medium">Dose</th>
+                    <th class="px-5 py-2.5 text-left font-medium">Date</th>
+                    <th class="px-5 py-2.5 text-left font-medium">Administered By</th>
+                    <th class="px-5 py-2.5 text-left font-medium">Remarks / Reactions</th>
+                  </tr>
                 </thead>
-
                 <tbody>
+                  <tr v-for="rec in childRecords" :key="rec.recordID"
+                    class="border-b border-slate-50 hover:bg-slate-50 transition-colors align-top">
+                    <td class="px-5 py-3 font-medium text-slate-700">{{ rec.vaccineName }}</td>
+                    <td class="px-5 py-3 text-slate-500">Dose {{ rec.doseNumber }}</td>
+                    <td class="px-5 py-3 text-slate-500">{{ rec.dateAdministered ? formatDate(rec.dateAdministered) : '—' }}</td>
+                    <td class="px-5 py-3 text-slate-500">{{ rec.administeredByName || 'Historical record' }}</td>
+                    <td class="px-5 py-3 text-slate-500 min-w-[260px]">
 
-                    <template
-                        v-for="visit in groupedHistory"
-                        :key="`visit-${visit.visitNumber}`"
-                    >
+                      <!-- Remarks can be added/corrected later, e.g. when a
+                           parent reports a reaction the day after -->
+                      <div v-if="editingRemarksId === rec.recordID" class="flex items-start gap-2">
+                        <textarea v-model="editRemarksText" rows="2"
+                          placeholder="e.g. Mild fever the next day, resolved with paracetamol"
+                          class="flex-1 px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                        ></textarea>
+                        <div class="flex flex-col gap-1 shrink-0">
+                          <button @click="saveRemarks(rec)" :disabled="savingRemarks" title="Save"
+                            class="p-1 rounded text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 transition-colors">
+                            <Loader2 v-if="savingRemarks" class="w-3.5 h-3.5 animate-spin" />
+                            <Check v-else class="w-3.5 h-3.5" />
+                          </button>
+                          <button @click="cancelEditRemarks" title="Cancel"
+                            class="p-1 rounded text-slate-400 hover:bg-slate-100 transition-colors">
+                            <X class="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
 
-                        <!-- VISIT DIVIDER -->
-                        <tr>
+                      <div v-else class="flex items-start justify-between gap-2 group">
+                        <span :class="hasReaction(rec.nurseObservation) ? 'text-amber-700 font-medium' : ''">{{ rec.nurseObservation || '—' }}</span>
+                        <button @click="startEditRemarks(rec)" title="Edit remarks"
+                          class="p-1 rounded text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <Pencil class="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
-                            <td
-                                colspan="6"
-                                class="px-5 py-3 bg-slate-50 border-y border-slate-100"
-                            >
-
-                                <div class="flex items-center gap-3">
-
-                                    <div
-                                        class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold"
-                                    >
-                                        {{ visit.visitNumber }}
-                                    </div>
-
-                                    <div>
-
-                                        <p class="text-sm font-semibold text-slate-800">
-                                            {{ visit.visitNumber }}{{
-                                                visit.visitNumber === 1 ? 'st' :
-                                                visit.visitNumber === 2 ? 'nd' :
-                                                visit.visitNumber === 3 ? 'rd' : 'th'
-                                            }} Visit
-                                        </p>
-
-                                        <p class="text-xs text-slate-400">
-                                            {{ formatDate(visit.date) }}
-                                        </p>
-
-                                    </div>
-
-                                </div>
-
-                            </td>
-
-                        </tr>
-
-
-                        <!-- RECORDS -->
-                        <tr
-                            v-for="r in visit.records"
-                            :key="r.vaccinationRecordID"
-                            class="border-b border-slate-50 hover:bg-slate-50 transition-colors"
-                        >
-
-                            <td class="px-5 py-3 pl-16 font-medium text-slate-700">
-                                {{ r.vaccineName }}
-                            </td>
-
-                            <td class="px-5 py-3 text-slate-500">
-                                Dose {{ r.doseNumber }}
-                            </td>
-
-                            <td class="px-5 py-3 text-slate-500">
-                                {{ formatDate(r.vaccinationDate) }}
-                            </td>
-
-                            <td class="px-5 py-3 text-slate-500">
-                                {{ r.administeredByName || '—' }}
-                            </td>
-
-                            <td class="px-5 py-3 text-slate-500">
-                                {{ r.nurseObservation || '—' }}
-                            </td>
-
-                            <td class="px-5 py-3 text-slate-500">
-                                {{ r.doctorDiagnosis || '—' }}
-                            </td>
-
-                        </tr>
-
-                    </template>
-
+                    </td>
+                  </tr>
                 </tbody>
+              </table>
+            </div>
+          </div>
 
-            </table>
+        </template>
 
+        <template v-else>
+
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold text-slate-800">Patients (Children)</h1>
+          <p class="text-sm text-slate-500 mt-1">Manage pediatric patient records and vaccinations</p>
         </div>
 
+        <!-- FILTER ROW -->
+        <div class="flex items-center gap-3 mb-5">
+          <div class="relative flex-1 max-w-sm">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input v-model="searchQuery" type="text" placeholder="Search by name, Family No., barangay, or parent..."
+              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white" />
+          </div>
+          <select v-model="statusFilter"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-600">
+            <option value="">All Status</option>
+            <option value="Due Soon">Due Soon</option>
+            <option value="Overdue">Overdue</option>
+            <option value="Up to Date">Up to Date</option>
+            <option value="Completed">Completed</option>
+            <option value="Not Started">Not Started</option>
+          </select>
+          <select v-model="barangayFilter"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-600">
+            <option value="">All Barangays</option>
+            <option v-for="b in uniqueBarangays" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+
+        <!-- TABLE -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div v-if="loading" class="flex items-center justify-center py-16">
+            <Loader2 class="w-5 h-5 animate-spin text-slate-400" />
+            <span class="ml-2 text-sm text-slate-400">Loading patients...</span>
+          </div>
+
+          <div v-else-if="filteredPatients.length === 0" class="flex flex-col items-center justify-center py-16 text-slate-400">
+            <Users class="w-10 h-10 mb-3 opacity-30" />
+            <p class="text-sm">No patients found</p>
+          </div>
+
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr class="text-xs text-slate-500 uppercase tracking-wide">
+                  <th class="px-5 py-3.5 text-left font-medium">Profile</th>
+                  <th class="px-5 py-3.5 text-left font-medium">Family No.</th>
+                  <th class="px-5 py-3.5 text-left font-medium cursor-pointer select-none hover:text-slate-700 transition-colors" @click="toggleSort('fullName')">
+                    <div class="flex items-center gap-1">
+                      Full Name
+                      <component :is="sortIcon('fullName')" class="w-3 h-3" :class="sortField === 'fullName' ? 'text-emerald-600' : 'text-slate-300'" />
+                    </div>
+                  </th>
+                  <th class="px-5 py-3.5 text-left font-medium cursor-pointer select-none hover:text-slate-700 transition-colors" @click="toggleSort('age')">
+                    <div class="flex items-center gap-1">
+                      Age
+                      <component :is="sortIcon('age')" class="w-3 h-3" :class="sortField === 'age' ? 'text-emerald-600' : 'text-slate-300'" />
+                    </div>
+                  </th>
+                  <th class="px-5 py-3.5 text-left font-medium">Sex</th>
+                  <th class="px-5 py-3.5 text-left font-medium">Barangay</th>
+                  <th class="px-5 py-3.5 text-left font-medium">Parent Name</th>
+                  <th class="px-5 py-3.5 text-left font-medium">Next Dose Due</th>
+                  <th class="px-5 py-3.5 text-left font-medium">Status</th>
+                  <th class="px-5 py-3.5 text-left font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="child in paginatedPatients" :key="child.childID"
+                  class="hover:bg-slate-50 transition-colors">
+                  <td class="px-5 py-3.5">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                      :style="{ backgroundColor: avatarColor(child.fullName) }">
+                      {{ initials(child.fullName) }}
+                    </div>
+                  </td>
+                  <td class="px-5 py-3.5 text-slate-600">{{ child.familyNo }}</td>
+                  <td class="px-5 py-3.5 font-medium text-slate-800">{{ child.fullName }}</td>
+                  <td class="px-5 py-3.5 text-slate-500">{{ child.age }}</td>
+                  <td class="px-5 py-3.5 text-slate-500">{{ child.sex }}</td>
+                  <td class="px-5 py-3.5 text-slate-500">{{ child.barangay }}</td>
+                  <td class="px-5 py-3.5 text-slate-500">{{ child.parentName }}</td>
+                  <td class="px-5 py-3.5 text-slate-500 text-xs">
+                    <span v-if="child.nextDueDate">{{ formatDate(child.nextDueDate) }}</span>
+                    <span v-else-if="child.vaccineStatus === 'Completed'" class="text-emerald-600 font-medium">Series complete</span>
+                    <span v-else class="text-slate-400">—</span>
+                  </td>
+                  <td class="px-5 py-3.5">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      :class="statusClass(child.vaccineStatus)">
+                      {{ child.vaccineStatus }}
+                    </span>
+                  </td>
+                  <td class="px-5 py-3.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="openRecord(child)" title="View Profile"
+                        class="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                        <Eye class="w-4 h-4" />
+                      </button>
+                      <button @click="attemptVaccinateFromSearch(child)" title="Opens the vaccination visit when this child is at your station"
+                        class="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                        <Syringe class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- PAGINATION -->
+          <div v-if="filteredPatients.length > 0" class="flex items-center justify-between px-5 py-3.5 border-t border-slate-100 flex-wrap gap-3">
+            <!-- Left: entries selector + count -->
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 text-xs text-slate-500">
+                <span>Show</span>
+                <select v-model="pageSize" @change="currentPage = 1"
+                  class="border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-600 outline-none bg-white">
+                  <option :value="10">10</option>
+                  <option :value="20">20</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+                <span>entries</span>
+              </div>
+              <p class="text-xs text-slate-400">
+                Showing {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredPatients.length) }}
+                of {{ filteredPatients.length }} patients
+              </p>
+            </div>
+            <!-- Right: numbered pages -->
+            <div class="flex items-center gap-1">
+              <button @click="currentPage--" :disabled="currentPage === 1"
+                class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronLeft class="w-4 h-4" />
+              </button>
+              <template v-for="p in paginationPages" :key="p">
+                <span v-if="p === '...'" class="px-1 text-xs text-slate-400">…</span>
+                <button v-else @click="currentPage = p"
+                  class="min-w-[28px] h-7 rounded-lg text-xs font-medium transition-colors"
+                  :class="p === currentPage
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100'">
+                  {{ p }}
+                </button>
+              </template>
+              <button @click="currentPage++" :disabled="currentPage >= totalPages"
+                class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronRight class="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- STATUS LEGEND -->
+        <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          <span class="font-medium text-slate-400">Status guide:</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400"></span>Due Soon — next dose within 14 days</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-400"></span>Overdue — past 14-day catch-up window</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-400"></span>Up to Date — next dose not yet due</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Completed — full vaccine series done</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span>Not Started — no vaccines recorded yet</span>
+        </div>
+        </template>
+
+      </main>
     </div>
 
+
+
+    <!-- SUCCESS TOAST -->
+    <Transition name="toast">
+      <div v-if="toast.show"
+        class="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-5 py-3.5 rounded-xl shadow-lg flex items-center gap-3 text-sm font-medium">
+        <CheckCircle class="w-5 h-5" />
+        {{ toast.message }}
+      </div>
+    </Transition>
+
+
+  </div>
 </template>
 
-            <!-- ═══════════════════════ PATIENT LIST VIEW ═══════════════════════ -->
-            <template v-else>
-            <div class="mb-5">
-                <h1 class="text-xl font-bold text-slate-800">Patients (Children)</h1>
-                <p class="text-sm text-slate-500 mt-0.5">Manage pediatric patient records and vaccinations</p>
-            </div>
-
-            <!-- SEARCH + FILTERS -->
-            <div class="flex items-center gap-3 mb-4">
-                <div class="relative flex-1 max-w-md">
-                <Search class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                    v-model="searchTerm"
-                    type="text"
-                    placeholder="Search by name..."
-                    class="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                </div>
-
-                <select
-                    v-model="statusFilter"
-                    class="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-600"
-                >
-                    <option value="">Status: All</option>
-                    <option value="Due Soon">Due Soon</option>
-                    <option value="Overdue">Overdue</option>
-                    <option value="Up to Date">Up to Date</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Not Started">Not Started</option>
-                </select>
-            </div>
-
-            <!-- LOADING / ERROR / EMPTY -->
-            <div v-if="loadingChildren" class="bg-white rounded-xl border border-slate-200 flex items-center justify-center py-16">
-                <Loader2 class="w-5 h-5 animate-spin text-slate-400" />
-                <span class="ml-2 text-sm text-slate-400">Loading patients...</span>
-            </div>
-
-            <div v-else-if="loadError" class="bg-white rounded-xl border border-slate-200 p-6">
-                <div class="flex items-start gap-2 text-sm text-red-700">
-                <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{{ loadError }}</span>
-                </div>
-            </div>
-
-            <div v-else-if="filteredChildren.length === 0" class="bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center py-16 text-slate-400">
-                <UserX class="w-7 h-7 mb-2 opacity-40" />
-                <p class="text-sm">{{ searchTerm ? 'No matching children' : 'No children found' }}</p>
-            </div>
-
-            <!-- TABLE -->
-            <div v-else class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <table class="w-full text-sm">
-                <thead>
-                    <tr class="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
-                    <th class="px-5 py-3 text-left font-medium">Profile</th>
-                    <th class="px-3 py-3 text-left font-medium">Full Name</th>
-                    <th class="px-3 py-3 text-left font-medium">Parent</th>
-                    <th class="px-3 py-3 text-left font-medium">Brgy No.</th>
-                    <th class="px-3 py-3 text-left font-medium">Age</th>
-                    <th class="px-3 py-3 text-left font-medium">Sex</th>
-                    <th class="px-3 py-3 text-left font-medium">Next Schedule</th>
-                    <th class="px-3 py-3 text-left font-medium">Status</th>
-                    <th class="px-3 py-3 text-left font-medium">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-50">
-                    <tr v-for="c in pagedChildren" :key="c.childID" class="hover:bg-slate-50 transition-colors">
-                    <td class="px-5 py-3">
-                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                        :style="{ backgroundColor: avatarColor(c.name) }">
-                        {{ initials(c.name) }}
-                        </div>
-                    </td>
-                    <td class="px-3 py-3 font-medium text-slate-800">{{ c.name }}</td>
-                    <td class="px-3 py-3 text-slate-500">{{ c.parentName || '—' }}</td>
-                    <td class="px-3 py-3 text-slate-500">{{ c.barangayNo || '—' }}</td>
-                    <td class="px-3 py-3 text-slate-500">{{ c.ageLabel || '—' }}</td>
-                    <td class="px-3 py-3 text-slate-500">{{ c.sex || '—' }}</td>
-                    <td class="px-3 py-3 text-slate-500 text-xs">
-                        <span v-if="c.nextDueDate">{{ formatDate(c.nextDueDate) }}</span>
-                        <span v-else-if="c.vaccineStatus === 'Completed'" class="text-emerald-600 font-medium">Series complete</span>
-                        <span v-else class="text-slate-400">—</span>
-                    </td>
-                    <td class="px-3 py-3">
-                        <span
-                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                            :class="statusClass(c.vaccineStatus)"
-                        >
-                            {{ c.vaccineStatus }}
-                        </span>
-                    </td>
-                    <td class="px-3 py-3">
-                        <div class="flex items-center gap-1.5">
-                        <button
-                            @click="openRecord(c)"
-                            title="View Record"
-                            class="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-emerald-700 transition-colors"
-                        >
-                            <Eye class="w-4 h-4" />
-                        </button>
-                        <button
-                            @click="attemptVaccinateFromSearch"
-                            title="Vaccination can only be started from an assigned Queue entry"
-                            class="p-1.5 rounded-lg text-slate-300 cursor-not-allowed"
-                        >
-                            <Syringe class="w-4 h-4" />
-                        </button>
-                        </div>
-                    </td>
-                    </tr>
-                </tbody>
-                </table>
-
-                <!-- PAGINATION -->
-                <div class="flex items-center justify-between px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
-                <span>Showing {{ pageStart + 1 }}-{{ Math.min(pageStart + pageSize, filteredChildren.length) }} of {{ filteredChildren.length }} patients</span>
-                <div class="flex items-center gap-4">
-                    <div class="flex items-center gap-1.5">
-                        <span>Show</span>
-                        <select
-                            v-model.number="pageSize"
-                            class="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                            <option :value="10">10</option>
-                            <option :value="20">20</option>
-                            <option :value="30">30</option>
-                            <option :value="50">50</option>
-                        </select>
-                        <span>entries</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <button @click="currentPage--" :disabled="currentPage === 1" class="p-1 rounded disabled:opacity-30 hover:bg-slate-100">
-                        <ChevronLeft class="w-3.5 h-3.5" />
-                        </button>
-                        <template v-for="(p, idx) in pageNumbers" :key="idx">
-                            <span v-if="p === '…'" class="px-1.5">…</span>
-                            <button
-                                v-else
-                                @click="currentPage = p"
-                                class="min-w-[24px] px-1.5 py-1 rounded text-xs"
-                                :class="p === currentPage ? 'bg-emerald-600 text-white font-medium' : 'text-slate-500 hover:bg-slate-100'"
-                            >
-                                {{ p }}
-                            </button>
-                        </template>
-                        <button @click="currentPage++" :disabled="currentPage >= totalPages" class="p-1 rounded disabled:opacity-30 hover:bg-slate-100">
-                        <ChevronRight class="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                </div>
-                </div>
-            </div>
-            </template>
-
-            <!-- INLINE NOTICE (e.g. vaccinate-blocked message) -->
-            <Transition name="toast">
-            <div v-if="notice" class="fixed bottom-6 right-6 z-50 bg-slate-800 text-white px-5 py-3 rounded-xl shadow-lg text-sm max-w-sm">
-                {{ notice }}
-            </div>
-            </Transition>
-
-        </main>
-        </div>
-    </div>
-    </template>
-
-    <script setup>
-    import { getUser, getToken, logout as clearSession } from '@/utils/auth'
-    import { ref, computed, onMounted, watch } from 'vue'
-    import { useRouter } from 'vue-router'
-    import {
-    Search, Loader2, UserX, Eye, Syringe, AlertCircle, ArrowLeft,
-    Cake, MapPin, Info, ChevronLeft, ChevronRight
-    } from 'lucide-vue-next'
-    import HealthcareSidebar from '@/components/Healthcare/Components/HealtcareSidebar.vue'
-    import HealthcareHeader from '@/components/Healthcare/Components/HealthcareHeader.vue'
-
-    const router = useRouter()
-
-    // VITE_API_URL is the bare host (no /api) per the project's existing
-    // convention — /api is appended here, not stored in the env var.
-    const API_BASE = `${(import.meta.env.VITE_API_URL || 'http://localhost:57147').replace(/\/$/, '')}/api`
-
-    function authHeaders() {
-    return { Authorization: `Bearer ${getToken()}` }
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // AUTH
-    // ─────────────────────────────────────────────────────────────
-    const SKIP_AUTH = false
-    const worker = ref({ userId: '', fullName: '', userType: '' })
-
-    onMounted(() => {
-    const account = getUser()
-
-    if (!account && !SKIP_AUTH) {
-    router.push('/')
-    return
-    }
-
-    const u = account || { UserID: 'dev-test-user', FirstName: 'Test', LastName: 'Worker', UserType: 'Nurse' }
-
-    worker.value = {
-        userId:   u.UserID || u.userID,
-        fullName: `${u.FirstName || u.firstName} ${u.LastName || u.lastName}`.trim(),
-        userType: u.UserType || u.userType || u.role,
-    }
-
-    fetchChildren()
-    })
-
-    function logout() {
-    clearSession()
-    router.push('/')
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // CHILDREN LIST
-    // CONFIRMED from ChildrenController.cs: GET /api/Children/all
-    // (note: NOT a bare GET /api/Children — there's no GetAll on the
-    // base route, only /all, /{id}, /parent/{parentId}). Confirmed
-    // field names: childID, firstName, middleName, lastName, birthDate,
-    // placeOfBirth, address, healthCenter, barangay, sex, parentName,
-    // parents[] (parentID, relationshipType, isPrimaryContact,
-    // canReceiveNotifications). parentName IS present on this response
-    // (confirmed working on the Doctor side) — it just wasn't being
-    // read here. No medical fields exist on this model at all,
-    // confirming the Medical Information gap below.
-    // ─────────────────────────────────────────────────────────────
-    // ─────────────────────────────────────────────────────────────
-    // DOH vaccine master — same list/dose counts used on the Doctor
-    // side (DoctorPatients.vue) so Status/Next Schedule match there.
-    // ─────────────────────────────────────────────────────────────
-    const VACCINE_MASTER = [
-        { vaccineId: 1, name: 'BCG Vaccine',                      totalDoses: 1 },
-        { vaccineId: 2, name: 'Hepatitis B Vaccine',              totalDoses: 1 },
-        { vaccineId: 3, name: 'Pentavalent (DPT-Hep B-HIB)',      totalDoses: 3, gap: 28 },
-        { vaccineId: 4, name: 'Oral Polio Vaccine (OPV)',         totalDoses: 3, gap: 28 },
-        { vaccineId: 5, name: 'Inactivated Polio Vaccine (IPV)',  totalDoses: 2, gap: 165 },
-        { vaccineId: 6, name: 'Pneumococcal Conj. Vaccine (PCV)', totalDoses: 3, gap: 28 },
-        { vaccineId: 7, name: 'MMR Vaccine',                      totalDoses: 2, gap: 90 },
-    ]
-    const TOTAL_DOSES = VACCINE_MASTER.reduce((sum, v) => sum + v.totalDoses, 0)
-
-    // Shared with openRecord() below so the list and the detail view
-    // always agree on a child's status/next dose, computed the same way.
-    function computeVaccineSummary(childRecords, today) {
-        const hasAnyRecords  = childRecords.length > 0
-        const completedCount = childRecords.filter(r => (r.status ?? r.Status) === 'Completed').length
-        const allDone        = hasAnyRecords && completedCount >= TOTAL_DOSES
-
-        const pendingRecords = childRecords
-            .filter(r => (r.status ?? r.Status) !== 'Completed' && (r.vaccinationDate ?? r.VaccinationDate ?? r.scheduledDate ?? r.ScheduledDate))
-            .sort((a, b) =>
-                new Date(a.vaccinationDate ?? a.VaccinationDate ?? a.scheduledDate ?? a.ScheduledDate) -
-                new Date(b.vaccinationDate ?? b.VaccinationDate ?? b.scheduledDate ?? b.ScheduledDate)
-            )
-
-        const nextRecord  = pendingRecords[0] ?? null
-        const nextDueDate = nextRecord
-            ? new Date(nextRecord.vaccinationDate ?? nextRecord.VaccinationDate ?? nextRecord.scheduledDate ?? nextRecord.ScheduledDate)
-            : null
-        const nextVaccineName = nextRecord
-            ? (nextRecord.vaccineName ?? nextRecord.VaccineName ?? `Vaccine Dose ${nextRecord.doseNumber ?? nextRecord.DoseNumber}`)
-            : null
-
-        let vaccineStatus = 'Not Started'
-        if (!hasAnyRecords) {
-            vaccineStatus = 'Not Started'
-        } else if (allDone) {
-            vaccineStatus = 'Completed'
-        } else if (nextDueDate) {
-            const diffDays = Math.floor((nextDueDate - today) / 86400000)
-            if (diffDays < -14)      vaccineStatus = 'Overdue'
-            else if (diffDays <= 14) vaccineStatus = 'Due Soon'
-            else                     vaccineStatus = 'Up to Date'
-        } else {
-            vaccineStatus = 'Up to Date'
-        }
-
-        return { nextDueDate, nextVaccineName, vaccineStatus, completedCount }
-    }
-
-    const allChildren          = ref([])
-    const allVaccinationRecords = ref([])
-    const loadingChildren      = ref(false)
-    const loadError            = ref('')
-    const searchTerm           = ref('')
-    const statusFilter         = ref('')
-
-    // Fetches every VaccinationRecords row once so both the list and any
-    // opened record can filter it client-side, instead of hitting
-    // GET /api/VaccinationRecords/child/{id} separately (that endpoint's
-    // DTO doesn't reliably include AdministeredByName/NurseObservation/
-    // DoctorDiagnosis, unlike /all — confirmed working on the Doctor
-    // side and in HealthcareVaccinationRecords.vue).
-    async function fetchAllVaccinationRecords(children) {
-        try {
-            const recRes = await fetch(`${API_BASE}/VaccinationRecords/all`, { headers: authHeaders() })
-            if (!recRes.ok) throw new Error(`VaccinationRecords/all failed (${recRes.status})`)
-            return await recRes.json()
-        } catch {
-            const allRecords = []
-            for (const c of children) {
-                const childID = c.childID ?? c.ChildID
-                try {
-                    const r = await fetch(`${API_BASE}/VaccinationRecords/child/${childID}`, { headers: authHeaders() })
-                    if (r.ok) {
-                        const recs = await r.json()
-                        allRecords.push(...recs.map(rec => ({ ...rec, childID })))
-                    }
-                } catch {}
-            }
-            return allRecords
-        }
-    }
-
-    async function fetchChildren() {
-    loadingChildren.value = true
-    loadError.value = ''
-    try {
-        const res = await fetch(`${API_BASE}/Children/all`, { headers: authHeaders() })
-        if (!res.ok) throw new Error(`Children request failed (${res.status})`)
-        const children = await res.json()
-
-        const allRecords = await fetchAllVaccinationRecords(children)
-        allVaccinationRecords.value = allRecords
-
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-
-        allChildren.value = children.map(c => {
-        const dob = c.birthDate ?? c.BirthDate ?? null
-        const childID = c.childID ?? c.ChildID
-
-        const childRecords = allRecords.filter(r =>
-            (r.childID ?? r.ChildID)?.toString().toLowerCase() === childID?.toString().toLowerCase()
-        )
-
-        const { nextDueDate, nextVaccineName, vaccineStatus, completedCount } = computeVaccineSummary(childRecords, today)
-
-        return {
-    childID,
-    name: `${c.firstName ?? c.FirstName ?? ''} ${c.lastName ?? c.LastName ?? ''}`.trim(),
-    parentName: c.parentName ?? c.ParentName ?? '—',
-    barangayNo: c.barangay ?? c.Barangay ?? null,
-    sex: c.sex ?? c.Sex ?? null,
-    allergies: c.allergies ?? c.Allergies ?? null,
-    dateOfBirth: dob,
-    ageLabel: dob ? ageLabelFromDOB(dob) : null,
-    nextDueDate,
-    nextVaccineName,
-    vaccineStatus,
-    completedCount,
-}
-        })
-    } catch (e) {
-        console.error('fetchChildren:', e)
-        loadError.value = 'Could not load patients. Check that GET /api/Children/all is reachable.'
-    } finally {
-        loadingChildren.value = false
-    }
-    }
-
-    function statusClass(status) {
-    return {
-        'Due Soon':    'bg-amber-100 text-amber-700',
-        'Overdue':     'bg-red-100 text-red-600',
-        'Up to Date':  'bg-blue-100 text-blue-700',
-        'Completed':   'bg-emerald-100 text-emerald-700',
-        'Not Started': 'bg-slate-100 text-slate-500',
-    }[status] || 'bg-slate-100 text-slate-600'
-    }
-
-    function ageLabelFromDOB(dobStr) {
-    const dob = new Date(dobStr)
-    if (isNaN(dob)) return null
-    const now = new Date()
-    let months = (now.getFullYear() - dob.getFullYear()) * 12 + (now.getMonth() - dob.getMonth())
-    if (now.getDate() < dob.getDate()) months--
-    if (months < 0) return null
-    if (months < 24) return `${months} month${months === 1 ? '' : 's'}`
-    const years = Math.floor(months / 12)
-    return `${years} yr${years === 1 ? '' : 's'}`
-    }
-
-    const filteredChildren = computed(() => {
-    const term = searchTerm.value.trim().toLowerCase()
-    let list = allChildren.value
-    if (term) list = list.filter(c => c.name.toLowerCase().includes(term))
-    if (statusFilter.value) list = list.filter(c => c.vaccineStatus === statusFilter.value)
-    return list
-    })
-
-    // ─────────────────────────────────────────────────────────────
-    // PAGINATION (client-side) — "Show entries" size picker + a
-    // numbered page list with ellipsis, matching StaffPatientRecords.vue
-    // ─────────────────────────────────────────────────────────────
-    const currentPage = ref(1)
-    const pageSize = ref(10)
-    const totalPages = computed(() => Math.max(1, Math.ceil(filteredChildren.value.length / pageSize.value)))
-    const pageStart = computed(() => (currentPage.value - 1) * pageSize.value)
-    const pagedChildren = computed(() => filteredChildren.value.slice(pageStart.value, pageStart.value + pageSize.value))
-
-    // Compact page list: first, last, a window around the current page,
-    // and '...' for any gap — e.g. 1 ... 4 5 6 ... 12
-    const pageNumbers = computed(() => {
-        const total = totalPages.value
-        const current = currentPage.value
-        const delta = 1
-        const pages = []
-        for (let i = 1; i <= total; i++) {
-            if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
-                pages.push(i)
-            }
-        }
-        const withDots = []
-        let last = 0
-        for (const p of pages) {
-            if (last && p - last > 1) withDots.push('…')
-            withDots.push(p)
-            last = p
-        }
-        return withDots
-    })
-
-    watch([searchTerm, statusFilter, pageSize], () => {
-        currentPage.value = 1
-    })
-
-    watch(totalPages, (total) => {
-        if (currentPage.value > total) currentPage.value = total
-    })
-
-    // ─────────────────────────────────────────────────────────────
-    // SELECTED CHILD RECORD + VACCINATION HISTORY
-    // History and the Next Vaccination summary are both derived from
-    // GET /api/VaccinationRecords/all filtered to this child, the same
-    // endpoint the patient list uses — /child/{id}'s DTO doesn't
-    // reliably carry AdministeredByName/NurseObservation/DoctorDiagnosis,
-    // which was showing those columns blank.
-    // ─────────────────────────────────────────────────────────────
-    const selectedChild  = ref(null)
-    const history         = ref([])
-    const loadingHistory  = ref(false)
-    const historyError    = ref('')
-
-async function openRecord(child) {
-    selectedChild.value = { ...child }
-
-    history.value = []
-    historyError.value = ''
-
-    loadingHistory.value = true
-
-    // Load full child information
-    try {
-        const childRes = await fetch(
-            `${API_BASE}/Children/${child.childID}`,
-            { headers: authHeaders() }
-        )
-
-        if (childRes.ok) {
-            const childData = await childRes.json()
-
-            selectedChild.value = {
-                ...selectedChild.value,
-                allergies:
-                    childData.allergies ??
-                    childData.Allergies ??
-                    null,
-                existingConditions:
-                    childData.existingConditions ??
-                    childData.ExistingConditions ??
-                    null,
-                birthHeight:
-                    childData.birthHeight ??
-                    childData.BirthHeight ??
-                    null,
-                birthWeight:
-                    childData.birthWeight ??
-                    childData.BirthWeight ??
-                    null,
-                primaryContactNo:
-                    childData.primaryContactNo ??
-                    childData.PrimaryContactNo ??
-                    childData.contactNo ??
-                    childData.ContactNo ??
-                    null
-            }
-        }
-    } catch (e) {
-        console.error('openRecord child details:', e)
-    }
-
-    // Vaccination history + Next Vaccination summary — both computed
-    // from GET /api/VaccinationRecords/all filtered to this child (falls
-    // back to /child/{id} only if /all is unreachable), so the detail
-    // view always agrees with the list and reliably has
-    // administeredByName/nurseObservation/doctorDiagnosis populated.
-    try {
-        let data
-        try {
-            const res = await fetch(`${API_BASE}/VaccinationRecords/all`, { headers: authHeaders() })
-            if (!res.ok) throw new Error(`VaccinationRecords/all request failed (${res.status})`)
-            const all = await res.json()
-            data = all.filter(r =>
-                (r.childID ?? r.ChildID)?.toString().toLowerCase() === child.childID?.toString().toLowerCase()
-            )
-        } catch {
-            const res = await fetch(
-                `${API_BASE}/VaccinationRecords/child/${child.childID}`,
-                { headers: authHeaders() }
-            )
-            if (!res.ok) throw new Error(`VaccinationRecords request failed (${res.status})`)
-            data = await res.json()
-        }
-
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const { nextDueDate, nextVaccineName, vaccineStatus, completedCount } = computeVaccineSummary(data, today)
-        selectedChild.value = {
-            ...selectedChild.value,
-            nextDueDate,
-            nextVaccineName,
-            vaccineStatus,
-            completedCount,
-        }
-
-        history.value = data
-            .map(r => ({
-                vaccinationRecordID:
-                    r.vaccinationRecordID ??
-                    r.VaccinationRecordID,
-
-                vaccineName:
-                    r.vaccineName ??
-                    r.VaccineName ??
-                    r.vaccine?.vaccineName ??
-                    r.Vaccine?.VaccineName ??
-                    'Unknown',
-
-                doseNumber:
-                    r.doseNumber ??
-                    r.DoseNumber,
-
-                vaccinationDate:
-                    r.vaccinationDate ??
-                    r.VaccinationDate,
-
-                nurseObservation:
-                    r.nurseObservation ??
-                    r.NurseObservation ??
-                    '',
-
-                doctorDiagnosis:
-                    r.doctorDiagnosis ??
-                    r.DoctorDiagnosis ??
-                    '',
-
-                administeredByName:
-                    r.administeredByName ??
-                    r.AdministeredByName ??
-                    (r.administeredBy
-                        ? `${r.administeredBy.firstName ?? r.administeredBy.FirstName ?? ''} ${r.administeredBy.lastName ?? r.administeredBy.LastName ?? ''}`.trim()
-                        : (
-                            r.AdministeredBy
-                                ? `${r.AdministeredBy.FirstName ?? r.AdministeredBy.firstName ?? ''} ${r.AdministeredBy.LastName ?? r.AdministeredBy.lastName ?? ''}`.trim()
-                                : (
-                                    r.personnel
-                                        ? `${r.personnel.firstName ?? r.personnel.FirstName ?? ''} ${r.personnel.lastName ?? r.personnel.LastName ?? ''}`.trim()
-                                        : ''
-                                )
-                        )),
-            }))
-            .filter(r => r.vaccinationDate) // only actually-administered doses belong in History
-            .sort(
-                (a, b) =>
-                    new Date(b.vaccinationDate) -
-                    new Date(a.vaccinationDate)
-            )
-
-    } catch (e) {
-        console.error('openRecord history:', e)
-        historyError.value =
-            'Could not load vaccination history for this child.'
-    } finally {
-        loadingHistory.value = false
-    }
-}
-
-const groupedHistory = computed(() => {
-    const groups = {}
-
-    history.value.forEach(record => {
-        const date = new Date(record.vaccinationDate)
-        if (isNaN(date)) return // skip anything without a valid administered date
-
-        // Group records that happened on the same date
-        const dateKey = date.toISOString().split('T')[0]
-
-        if (!groups[dateKey]) {
-            groups[dateKey] = {
-                date: record.vaccinationDate,
-                records: []
-            }
-        }
-
-        groups[dateKey].records.push(record)
-    })
-
-    // Convert object into an array and assign visit numbers
-    return Object.values(groups)
-        .sort((a, b) => new Date(a.date) - new Date(b.date))
-        .map((visit, index) => ({
-            visitNumber: index + 1,
-            date: visit.date,
-            records: visit.records
-        }))
+<script setup>
+import { getUser } from '@/utils/auth'
+import HealthcareSidebar from './Components/HealthcareSidebar.vue'
+import HealthcareHeader from './Components/HealthcareHeader.vue'
+import { isAtMyStation } from './Components/station.js'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import axios from 'axios'
+import {
+  Home, Users, Calendar, Syringe, FileText, Settings,
+  Search, Bell, LogOut, Loader2, X, CheckCircle, Info,
+  Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown,
+  ArrowLeft, Cake, MapPin, Phone, HeartPulse, Pencil, Check,
+  ListChecks
+} from 'lucide-vue-next'
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:57147'
+const router = useRouter()
+const route  = useRoute()
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+const doctor = ref({ userId: '', fullName: '', userType: '', prcNo: '' })
+onMounted(() => {
+  const u = getUser()
+if (!u) { router.push('/'); return }
+  doctor.value = {
+    userId:   u.UserID,
+    fullName: `${u.FirstName} ${u.LastName}`,
+    userType: u.UserType,
+    prcNo:    u.PRCNo || '',
+  }
+  fetchPatients()
 })
 
-    function closeRecord() {
-    selectedChild.value = null
-    history.value = []
-    }
 
-    // ─────────────────────────────────────────────────────────────
-    // SAFETY RULE: vaccination can only start from an assigned Queue
-    // entry, never from a general patient search. This button is
-    // deliberately inert — it explains why instead of doing anything.
-    // ─────────────────────────────────────────────────────────────
-    const notice = ref('')
-    let noticeTimer = null
-    function attemptVaccinateFromSearch() {
-    notice.value = 'This child must be started from the Queue once assigned to you.'
-    clearTimeout(noticeTimer)
-    noticeTimer = setTimeout(() => (notice.value = ''), 3500)
-    }
+const doctorInitials = computed(() =>
+  doctor.value.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+)
 
-    // ─────────────────────────────────────────────────────────────
-    // NEW PATIENT ASSIGNMENT POPUP — SCAFFOLDED, NOT LIVE
-    // ─────────────────────────────────────────────────────────────
-    // The Queue model (confirmed from QueueController.cs) has no
-    // AssignedPersonnelID or any per-worker assignment field, so there
-    // is currently no real data source that could trigger this popup.
-    // Building it to fire automatically would mean faking the event.
-    //
-    // What's missing on the backend before this can go live:
-    //   1. A field on Queue (or a new Assignment entity) linking a queue
-    //      entry / child to a specific Personnel/User — e.g.
-    //      AssignedPersonnelID on Queue, settable via a new endpoint like
-    //      PUT /api/Queue/{id}/assign  { personnelId }
-    //   2. A way for the frontend to detect NEW assignments — either a
-    //      poll-able endpoint (GET /api/Queue/assigned/{personnelId}) or
-    //      a push channel (SignalR/WebSocket). Polling GET /api/Queue and
-    //      diffing client-side is NOT reliable for "new" detection once
-    //      real assignment data exists.
-    //
-    // Once that exists, wire it up here:
-    //
-    //   import Swal from 'sweetalert2' // confirm this isn't already a
-    //                                   // project dependency before adding it
-    //
-    //   async function presentAssignmentPopup(assignment) {
-    //     const result = await Swal.fire({
-    //       title: 'New Patient Assignment',
-    //       html: `
-    //         <div style="text-align:left">
-    //           <p><strong>${assignment.childName}</strong></p>
-    //           <p>Barangay: ${assignment.barangayNo ?? '—'}</p>
-    //           <p>Queue #: ${assignment.queueNumber ?? '—'}</p>
-    //           <p>Vaccine: ${assignment.vaccineName ?? '—'}</p>
-    //           <p>Dose: ${assignment.doseNumber ?? '—'}</p>
-    //           <p>Room: ${assignment.room ?? '—'}</p>
-    //         </div>
-    //       `,
-    //       showCancelButton: true,
-    //       confirmButtonText: 'Accept Patient',
-    //       cancelButtonText: 'Decline',
-    //       confirmButtonColor: '#059669',
-    //     })
-    //
-    //     if (result.isConfirmed) {
-    //       // PUT /api/Queue/{id}/assign/accept  (endpoint TBD)
-    //       router.push(`/healthcare/vaccination/${assignment.queueID}?child=${assignment.childID}`)
-    //     } else {
-    //       // PUT /api/Queue/{id}/assign/decline  (endpoint TBD)
-    //     }
-    //   }
+// ── Nav ───────────────────────────────────────────────────────────────────
+// ── DOH Vaccine master ────────────────────────────────────────────────────
+const VACCINE_MASTER = [
+  { vaccineId: 1, name: 'BCG Vaccine',                      totalDoses: 1 },
+  { vaccineId: 2, name: 'Hepatitis B Vaccine',              totalDoses: 1 },
+  { vaccineId: 3, name: 'Pentavalent (DPT-Hep B-HIB)',      totalDoses: 3, gap: 28 },
+  { vaccineId: 4, name: 'Oral Polio Vaccine (OPV)',         totalDoses: 3, gap: 28 },
+  { vaccineId: 5, name: 'Inactivated Polio Vaccine (IPV)',  totalDoses: 2, gap: 165 },
+  { vaccineId: 6, name: 'Pneumococcal Conj. Vaccine (PCV)', totalDoses: 3, gap: 28 },
+  { vaccineId: 7, name: 'MMR Vaccine',                      totalDoses: 2, gap: 90 },
+]
+const TOTAL_DOSES = VACCINE_MASTER.reduce((sum, v) => sum + v.totalDoses, 0)
 
-    // ─────────────────────────────────────────────────────────────
-    // HELPERS
-    // ─────────────────────────────────────────────────────────────
-    const AVATAR_COLORS = ['#4a7c59', '#6b7c45', '#8b5e3c', '#4a6fa5', '#7b4f8e', '#5a7a6b', '#8b6914']
-    function avatarColor(name) {
-    if (!name) return AVATAR_COLORS[0]
-    return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]
-    }
-    function initials(name) {
-    if (!name) return '?'
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-    }
-    function formatDate(dateStr) {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-    }
-    </script>
+// ── Data ──────────────────────────────────────────────────────────────────
+const patients       = ref([])
+const loading        = ref(false)
+const searchQuery    = ref('')
+const statusFilter   = ref('')
+const barangayFilter = ref('')
+const currentPage    = ref(1)
+const pageSize       = ref(10)
 
-    <style scoped>
-    .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
-    .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(12px); }
-    </style>
+// ── Sorting ───────────────────────────────────────────────────────────────
+const sortField = ref(null)      // 'fullName' | 'age' | null
+const sortDir   = ref('asc')     // 'asc' | 'desc'
+
+function toggleSort(field) {
+  if (sortField.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortDir.value = 'asc'
+  }
+  currentPage.value = 1
+}
+
+function sortIcon(field) {
+  if (sortField.value !== field) return ArrowUpDown
+  return sortDir.value === 'asc' ? ArrowUp : ArrowDown
+}
+
+async function fetchPatients() {
+  loading.value = true
+  try {
+    // GET /api/Children/overview — one row per child with dose counts and
+    // the next due dose already worked out from the vaccination timeline.
+    // (This used to look for the next dose inside VaccinationRecords, which
+    // only ever holds doses already given, so "Next Dose Due" was always
+    // blank and most children showed the wrong status.)
+    const res = await axios.get(`${API}/api/Children/overview`)
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    patients.value = res.data.map(c => {
+      const nextDueDate = c.nextDueDate ? new Date(c.nextDueDate) : null
+
+      // Same rules as the status guide under the table: Overdue only once
+      // the earliest missed dose is past the 14-day catch-up window.
+      const daysUntilNext = nextDueDate ? Math.floor((nextDueDate - today) / 86400000) : null
+      let vaccineStatus
+      if (c.totalDoses > 0 && c.completedDoses === c.totalDoses) {
+        vaccineStatus = 'Completed'
+      } else if (daysUntilNext !== null && daysUntilNext < -14) {
+        vaccineStatus = 'Overdue'
+      } else if (daysUntilNext !== null && daysUntilNext <= 14) {
+        vaccineStatus = 'Due Soon'
+      } else if (c.completedDoses === 0) {
+        vaccineStatus = 'Not Started'
+      } else {
+        vaccineStatus = 'Up to Date'
+      }
+
+      return {
+        childID:         c.childID,
+        fullName:        `${c.firstName} ${c.lastName}`,
+        age:             computeAge(c.birthDate),
+        ageMonths:       computeAgeMonths(c.birthDate),
+        sex:             c.sex ?? '—',
+        barangay:        c.barangay ?? '—',
+        familyNo:        c.familyNo || '—',
+        parentName:      c.parentName || '—',
+        parentContact:   c.parentContact || null,
+        birthDate:       c.birthDate,
+        nextDueDate,
+        nextVaccineName: c.nextVaccine,
+        vaccineStatus,
+        completedCount:  c.completedDoses,
+        totalDoses:      c.totalDoses,
+      }
+    })
+  } catch (err) {
+    console.error('fetchPatients error:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
+function computeAge(birthDate) {
+  if (!birthDate) return '—'
+  const birth = new Date(birthDate)
+  const now   = new Date()
+  let years   = now.getFullYear() - birth.getFullYear()
+  let months  = now.getMonth() - birth.getMonth()
+  if (months < 0) { years--; months += 12 }
+  if (years === 0) return `${months} mo${months !== 1 ? 's' : ''}`
+  if (months === 0) return `${years} yr${years !== 1 ? 's' : ''}`
+  return `${years} yr${years !== 1 ? 's' : ''} ${months} mo${months !== 1 ? 's' : ''}`
+}
+
+// Numeric age-in-months, used for sorting the Age column (the display
+// string "X yrs Y mos" isn't directly comparable).
+function computeAgeMonths(birthDate) {
+  if (!birthDate) return -1
+  const birth = new Date(birthDate)
+  const now   = new Date()
+  return (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth())
+}
+
+// ── Filters / Sort / Pagination ──────────────────────────────────────────
+const uniqueBarangays = computed(() =>
+  [...new Set(patients.value.map(c => c.barangay).filter(b => b && b !== '—'))].sort()
+)
+
+const filteredPatients = computed(() => {
+  let list = patients.value
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(c =>
+      c.fullName.toLowerCase().includes(q) ||
+      c.familyNo.toLowerCase().includes(q) ||
+      String(c.barangay).toLowerCase().includes(q) ||
+      c.parentName.toLowerCase().includes(q)
+    )
+  }
+  if (statusFilter.value)
+    list = list.filter(c => c.vaccineStatus === statusFilter.value)
+  if (barangayFilter.value)
+    list = list.filter(c => c.barangay === barangayFilter.value)
+  return list
+})
+
+const sortedPatients = computed(() => {
+  if (!sortField.value) return filteredPatients.value
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  const list = [...filteredPatients.value]
+  if (sortField.value === 'fullName') {
+    list.sort((a, b) => a.fullName.localeCompare(b.fullName) * dir)
+  } else if (sortField.value === 'age') {
+    list.sort((a, b) => (a.ageMonths - b.ageMonths) * dir)
+  }
+  return list
+})
+
+const totalPages = computed(() => Math.ceil(filteredPatients.value.length / pageSize.value))
+const paginatedPatients = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return sortedPatients.value.slice(start, start + pageSize.value)
+})
+const paginationPages = computed(() => {
+  const total = totalPages.value
+  const cur = currentPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages = []
+  pages.push(1)
+  if (cur > 3) pages.push('...')
+  for (let p = Math.max(2, cur - 1); p <= Math.min(total - 1, cur + 1); p++) pages.push(p)
+  if (cur < total - 2) pages.push('...')
+  pages.push(total)
+  return pages
+})
+
+watch([searchQuery, statusFilter, barangayFilter], () => { currentPage.value = 1 })
+
+// ── PATIENT RECORD (full-page, mirrors the Nurse view) ─────────────────────
+const selectedChild       = ref(null)
+const childRecords        = ref([])
+const loadingChildRecords = ref(false)
+const childTimeline       = ref([])
+
+// Not-yet-given doses from the child's vaccination timeline (already
+// recalculated by the backend when an earlier dose was given late).
+const remainingDoses = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return childTimeline.value
+    .filter(t => t.status === 'Pending' || t.status === 'Missed')
+    .map(t => {
+      const d = new Date(t.scheduledDate)
+      d.setHours(0, 0, 0, 0)
+      const label = d < today ? 'Overdue' : d.getTime() === today.getTime() ? 'Due Today' : 'Upcoming'
+      return { ...t, label }
+    })
+    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate))
+})
+
+function closeRecord() {
+  selectedChild.value = null
+  childRecords.value = []
+  childTimeline.value = []
+}
+
+async function openRecord(child) {
+  selectedChild.value = child
+  loadingChildRecords.value = true
+  childTimeline.value = []
+  axios.get(`${API}/api/VaccinationTimeline/child/${child.childID}`)
+    .then(res => { childTimeline.value = res.data })
+    .catch(e => console.error('openRecord timeline:', e))
+
+  // Pull the full child record (allergies, conditions, birth measurements,
+  // contact) the same way the Nurse view does — the list endpoint doesn't
+  // carry these fields, only /api/Children/{id} does.
+  try {
+    const childRes = await axios.get(`${API}/api/Children/${child.childID}`)
+    const childData = childRes.data
+    selectedChild.value = {
+      ...selectedChild.value,
+      allergies:          childData.allergies ?? childData.Allergies ?? null,
+      existingConditions: childData.existingConditions ?? childData.ExistingConditions ?? null,
+      birthHeight:         childData.birthHeight ?? childData.BirthHeight ?? null,
+      birthWeight:         childData.birthWeight ?? childData.BirthWeight ?? null,
+      primaryContactNo:    childData.primaryContactNo ?? childData.PrimaryContactNo ?? childData.contactNo ?? childData.ContactNo ?? child.parentContact ?? null,
+    }
+  } catch (e) {
+    console.error('openRecord child details:', e)
+  }
+
+  try {
+    const res = await axios.get(`${API}/api/VaccinationRecords/child/${child.childID}`)
+    // Backend returns vaccinationDate/vaccinationRecordID — normalize to the
+    // dateAdministered/recordID names this modal's template already expects,
+    // and build administeredByName from whichever shape the API gives us
+    // (mirrors the Nurse view's mapping).
+    childRecords.value = res.data
+      .map(r => ({
+        ...r,
+        recordID:         r.recordID ?? r.vaccinationRecordID ?? r.VaccinationRecordID ?? null,
+        vaccineName:       r.vaccineName ?? r.VaccineName ?? r.vaccine?.vaccineName ?? r.Vaccine?.VaccineName ?? 'Unknown',
+        doseNumber:        r.doseNumber ?? r.DoseNumber,
+        dateAdministered:  r.dateAdministered ?? r.vaccinationDate ?? r.VaccinationDate ?? null,
+        nurseObservation:  r.nurseObservation ?? r.NurseObservation ?? '',
+        administeredByName:
+          r.administeredByName ?? r.AdministeredByName ??
+          (r.administeredBy
+            ? `${r.administeredBy.firstName ?? r.administeredBy.FirstName ?? ''} ${r.administeredBy.lastName ?? r.administeredBy.LastName ?? ''}`.trim()
+            : (r.AdministeredBy
+                ? `${r.AdministeredBy.FirstName ?? r.AdministeredBy.firstName ?? ''} ${r.AdministeredBy.LastName ?? r.AdministeredBy.lastName ?? ''}`.trim()
+                : '')),
+      }))
+      .sort((a, b) =>
+        new Date(a.dateAdministered ?? a.scheduledDate) - new Date(b.dateAdministered ?? b.scheduledDate)
+      )
+  } catch { childRecords.value = [] }
+  finally { loadingChildRecords.value = false }
+}
+
+// ── EDIT REMARKS (inline, on a dose already given) ────────────────────────
+// Remarks are where health workers note complications / adverse reactions,
+// and are what they check before giving the next dose. They can be added
+// or corrected after the visit — e.g. a parent reports a fever the next
+// day. PATCH /api/VaccinationRecords/{id}/remarks (logged in the audit trail).
+const editingRemarksId = ref(null)
+const editRemarksText  = ref('')
+const savingRemarks    = ref(false)
+
+function startEditRemarks(rec) {
+  editingRemarksId.value = rec.recordID
+  editRemarksText.value  = rec.nurseObservation || ''
+}
+
+function cancelEditRemarks() {
+  editingRemarksId.value = null
+  editRemarksText.value  = ''
+}
+
+async function saveRemarks(rec) {
+  savingRemarks.value = true
+  try {
+    const { data } = await axios.patch(`${API}/api/VaccinationRecords/${rec.recordID}/remarks`, {
+      remarks:         editRemarksText.value || null,
+      updatedByUserID: doctor.value.userId,
+    })
+    rec.nurseObservation = data.remarks || ''
+    editingRemarksId.value = null
+    showToast('Remarks updated')
+  } catch (err) {
+    console.error('saveRemarks error:', err)
+    showToast(err.response?.data?.message || 'Failed to save remarks. Please try again.')
+  } finally {
+    savingRemarks.value = false
+  }
+}
+
+// Remarks that mention anything other than "no reaction" are highlighted.
+function hasReaction(text) {
+  const t = (text || '').toLowerCase()
+  return !!t && !/no (adverse )?reaction/.test(t)
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+const toast = ref({ show: false, message: '' })
+function showToast(msg) {
+  toast.value = { show: true, message: msg }
+  setTimeout(() => toast.value.show = false, 3500)
+}
+
+// ─────────────────────────────────────────────────────────────
+// RECORD VACCINE — only for the child the Admission Staff sent to
+// MY station. If they are, open their vaccination visit; otherwise
+// explain where the child is instead of recording anything here.
+// ─────────────────────────────────────────────────────────────
+async function attemptVaccinateFromSearch(childArg) {
+  const child = childArg || selectedChild.value
+  const childId = child?.childID ?? child?.childId
+  if (!childId) return
+
+  try {
+    const res = await axios.get(`${API}/api/Queue/today`)
+    const visit = res.data.find(q =>
+      q.children.some(c => c.childID.toString().toLowerCase() === childId.toString().toLowerCase()))
+
+    if (!visit) {
+      showToast(`${child.fullName} hasn't checked in today. The Admission Staff adds them to the queue first.`)
+    } else if (isAtMyStation(visit)) {
+      router.push(`/healthcare/vaccination/${visit.queueID}?child=${childId}`)
+    } else if ((visit.status || '').toLowerCase() === 'completed') {
+      showToast(`${child.fullName}'s visit today is already completed.`)
+    } else if (visit.assignedRoomID) {
+      showToast(`${child.fullName} is at ${visit.stationName} with ${visit.assignedWorkerName || 'another health worker'}.`)
+    } else {
+      showToast(`${child.fullName} is #${visit.queueNumber} in the queue, waiting to be sent to a station.`)
+    }
+  } catch {
+    showToast('Could not check the queue. Please try again.')
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function statusClass(status) {
+  return {
+    'Due Soon':    'bg-amber-100 text-amber-700',
+    'Overdue':     'bg-red-100 text-red-600',
+    'Up to Date':  'bg-blue-100 text-blue-700',
+    'Completed':   'bg-emerald-100 text-emerald-700',
+    'Not Started': 'bg-slate-100 text-slate-500',
+  }[status] || 'bg-slate-100 text-slate-600'
+}
+
+function formatDate(date) {
+  if (!date) return '—'
+  try { return new Date(date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) }
+  catch { return '—' }
+}
+
+const AVATAR_COLORS = ['#4a7c59','#6b7c45','#8b5e3c','#4a6fa5','#7b4f8e','#5a7a6b','#8b6914']
+function avatarColor(name) {
+  if (!name) return AVATAR_COLORS[0]
+  return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]
+}
+function initials(name) {
+  if (!name) return '?'
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+}
+
+</script>
+
+<style scoped>
+.modal-enter-active, .modal-leave-active { transition: opacity 0.2s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-active > div, .modal-leave-active > div { transition: transform 0.25s cubic-bezier(0.4,0,0.2,1); }
+.modal-enter-from > div, .modal-leave-to > div { transform: scale(0.95); }
+
+.toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
+.toast-enter-from { opacity: 0; transform: translateY(12px); }
+.toast-leave-to { opacity: 0; transform: translateY(12px); }
+
+</style>

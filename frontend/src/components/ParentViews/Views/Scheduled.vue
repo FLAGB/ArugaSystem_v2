@@ -128,6 +128,7 @@ import ProfileModal from '../Components/Profilemodal.vue'
 import NotificationPanel from '../Components/Notificationpanel.vue'
 import { getAccount, logout as authLogout } from '@/utils/auth'
 import api from '../Composables/api.js'
+import { fetchChildSchedule, buildSchedule } from '../Composables/childSchedule.js'
 
 const router = useRouter()
 
@@ -140,83 +141,16 @@ const showNotifications  = ref(false)
 const completedRecords   = ref([])
 const unreadCount        = ref(0)
 
-// ── Vaccine master (DOH schedule) — duplicated per-page, see HARD RULE 1 ───
-const VACCINE_MASTER = [
-  { vaccineId: 5,  name: 'BCG Vaccine',                      doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 6,  name: 'Hepatitis B Vaccine',              doses: [{ n: 1, gap: 0   }] },
-  { vaccineId: 7,  name: 'Pentavalent (DPT-Hep B-HIB)',      doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 8,  name: 'Oral Polio Vaccine (OPV)',         doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 9,  name: 'Inactivated Polio Vaccine (IPV)',  doses: [{ n: 1, gap: 105 }, { n: 2, gap: 165}] },
-  { vaccineId: 10, name: 'Pneumococcal Conj. Vaccine (PCV)', doses: [{ n: 1, gap: 45  }, { n: 2, gap: 28 }, { n: 3, gap: 28 }] },
-  { vaccineId: 11, name: 'MMR Vaccine',                      doses: [{ n: 1, gap: 270 }, { n: 2, gap: 90 }] },
-]
+// ── Vaccination schedule — from the backend timeline, shared with the
+//    other parent pages (Composables/childSchedule.js) ─────────────────────
+const scheduleTimeline = ref([])
 
-function snapToClinicDay(date) {
-  let d = new Date(date)
-  while (!(isMonday(d) || isWednesday(d) || isFriday(d))) d = addDays(d, 1)
-  return d
-}
 function formatDisplayDate(date) {
   if (!date) return '—'
   try { return format(new Date(date), 'MMM d, yyyy') } catch { return '—' }
 }
 
-const computedVaccineList = computed(() => {
-  if (!selectedChild.value?.birthDate) return []
-  const birth = new Date(selectedChild.value.birthDate)
-  const result = []
-
-  for (const vaccine of VACCINE_MASTER) {
-    let prevActualDate   = null
-    let prevOriginalDate = null
-
-    for (const dose of vaccine.doses) {
-      const record = completedRecords.value.find(r =>
-        Number(r.vaccineID ?? r.vaccineId) === vaccine.vaccineId &&
-        Number(r.doseNumber ?? r.DoseNumber) === dose.n &&
-        r.status === 'Completed' &&
-        r.dateAdministered
-      )
-
-      const originalDueDate = dose.n === 1
-        ? snapToClinicDay(addDays(birth, dose.gap))
-        : snapToClinicDay(addDays(prevOriginalDate ?? birth, dose.gap))
-
-      let scheduledDate
-      if (record) {
-        scheduledDate = new Date(record.dateAdministered)
-      } else if (dose.n === 1) {
-        scheduledDate = snapToClinicDay(addDays(birth, dose.gap))
-      } else {
-        const base = prevActualDate ?? prevOriginalDate ?? birth
-        scheduledDate = snapToClinicDay(addDays(base, dose.gap))
-      }
-
-      const administeredDate = record ? new Date(record.dateAdministered) : null
-      const wasLate = record ? administeredDate > originalDueDate : false
-      const daysLate = wasLate
-        ? Math.max(0, Math.round((administeredDate - originalDueDate) / 86400000))
-        : 0
-
-      prevOriginalDate = originalDueDate
-      prevActualDate   = administeredDate ?? null
-
-      result.push({
-        doseId:          `${vaccine.vaccineId}-${dose.n}`,
-        vaccineId:       vaccine.vaccineId,
-        name:            vaccine.name,
-        doseNumber:      dose.n,
-        scheduledDate,
-        originalDueDate,
-        isCompleted:     !!record,
-        administeredDate,
-        wasLate,
-        daysLate,
-      })
-    }
-  }
-  return result
-})
+const computedVaccineList = computed(() => buildSchedule(scheduleTimeline.value, completedRecords.value))
 
 const groupedVaccineList = computed(() => {
   const map = new Map()
@@ -288,14 +222,9 @@ function handleSelectChild(child) {
 async function fetchRecords(childId) {
   if (!childId) return
   try {
-    const res = await api.get(`/VaccinationRecords/child/${childId}`)
-    // Backend returns vaccinationDate/vaccinationRecordID — normalize to the
-    // dateAdministered/recordId names computedVaccineList expects below.
-    completedRecords.value = res.data.map(r => ({
-      ...r,
-      recordId:         r.recordId ?? r.vaccinationRecordID ?? null,
-      dateAdministered: r.dateAdministered ?? r.vaccinationDate ?? null,
-    }))
+    const { timeline, records } = await fetchChildSchedule(childId)
+    scheduleTimeline.value = timeline
+    completedRecords.value = records
   } catch (err) {
     console.error('fetchRecords error:', err)
     completedRecords.value = []

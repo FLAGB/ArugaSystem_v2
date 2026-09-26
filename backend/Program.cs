@@ -9,9 +9,11 @@ using AndroidWebAPI.Repositories;
 using AndroidWebAPI.Services;
 var builder = WebApplication.CreateBuilder(args);
 
-var hash = BCrypt.Net.BCrypt.HashPassword("Admin12345");
-Console.WriteLine("ADMIN HASH:");
-Console.WriteLine(hash);
+// Keep the console readable: hide the SQL text of every query, so messages
+// like "[Email not set up]" and errors stand out.
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Model.Validation", LogLevel.Error);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Model", LogLevel.Error);
 
 
 // ── Ports ────────────────────────────────────────────────────
@@ -57,7 +59,6 @@ builder.Services.AddScoped<IVaccinationTimelineRepository, VaccinationTimelineRe
 builder.Services.AddScoped<IQueueRepository, QueueRepository>();
 builder.Services.AddScoped<IQueueQRSettingRepository, QueueQRSettingRepository>();
 builder.Services.AddScoped<IQueueQRCodeRepository, QueueQRCodeRepository>();
-builder.Services.AddScoped<IQueueQRCodeRepository, QueueQRCodeRepository>();
 builder.Services.AddScoped<IClinicOperatingScheduleRepository, ClinicOperatingScheduleRepository>();
 
 builder.Services.AddScoped<
@@ -70,6 +71,11 @@ builder.Services.AddScoped<IVaccinationScheduleRuleRepository, VaccinationSchedu
 builder.Services.AddScoped<IChildrenRepository, ChildrenRepository>();
 builder.Services.AddScoped<ParentRepository>();          // ← only once
 builder.Services.AddScoped<IAccountRepository, AccountRepositoryImpl>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AuditService>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<MessageSender>();   // Email + SMS (settings in appsettings.json)
+builder.Services.AddScoped<ParentNotifier>();
 builder.Services.AddDbContext<AppDbContext>(options =>   // ← only once
 options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -94,7 +100,14 @@ builder.Services
             )
         };
     });
-builder.Services.AddAuthorization();
+// Every API call needs a signed-in user unless the endpoint says [AllowAnonymous]
+// (login, Forgot Password). Role rules sit on the controllers themselves.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 builder.Services.AddCors(options =>
 {
@@ -106,16 +119,13 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHostedService<NotificationGeneratorService>();  // ← only once
 // Queue QR Code
-builder.Services.AddScoped<IQueueQRCodeRepository, QueueQRCodeRepository>();
 builder.Services.AddScoped<IQueueQRCodeService, QueueQRCodeService>();
-
-// Clinic Schedule
-builder.Services.AddScoped<IClinicOperatingScheduleRepository, ClinicOperatingScheduleRepository>();
 
 // ── Build ─────────────────────────────────────────────────────
 var app = builder.Build();
 
-app.UseHttpsRedirection();
+// The API runs on plain http://localhost:57147 (see UseUrls above), so there
+// is no HTTPS port to redirect to.
 
 if (app.Environment.IsDevelopment())
 {
