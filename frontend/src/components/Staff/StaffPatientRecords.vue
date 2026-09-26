@@ -1,9 +1,9 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted, h } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted, h } from "vue";
 import { useRoute } from "vue-router";
 import {
   Users, Syringe, Search,
-  UserPlus, Eye, Pencil, Link2, KeyRound, Ban, Archive as ArchiveIcon,
+  UserPlus, Eye, Pencil, Link2, KeyRound, Ban,
   MoreHorizontal, X, MapPin, Phone, Mail, Baby, Check,
   ArrowRightLeft, UserCircle2, Star, ShieldCheck, Trash2, AlertTriangle,
 } from "lucide-vue-next";
@@ -51,11 +51,15 @@ const api = {
   getRelationshipsByParent:     (parentId)    => axios.get(`${API_BASE}/ChildParentRelationships/parent/${parentId}`).then(r => r.data),
   createRelationship:           (payload)     => axios.post(`${API_BASE}/ChildParentRelationships`, payload).then(r => r.data),
   deleteRelationship:           (relationshipId) => axios.delete(`${API_BASE}/ChildParentRelationships/${relationshipId}`).then(r => r.data),
+
+  // A parent's portal login (AccountController; staff may change parent logins only)
+  setAccountStatus:             (accountId, status) => axios.patch(`${API_BASE}/accounts/${accountId}/status`, { status }).then(r => r.data),
+  resetAccountPassword:         (accountId)   => axios.post(`${API_BASE}/accounts/${accountId}/reset-password`).then(r => r.data),
 };
 
 /* ---------- tiny render-fn components (badge / avatar markup, used everywhere) ---------- */
-const statusStyle = { Active:"bg-emerald-50 text-emerald-700", Inactive:"bg-stone-100 text-stone-600", Pending:"bg-amber-50 text-amber-700", Archived:"bg-rose-50 text-rose-700" };
-const statusDot   = { Active:"bg-emerald-600", Inactive:"bg-stone-400", Pending:"bg-amber-500", Archived:"bg-rose-600" };
+const statusStyle = { Active:"bg-emerald-50 text-emerald-700", Inactive:"bg-stone-100 text-stone-600", Pending:"bg-amber-50 text-amber-700", Archived:"bg-rose-50 text-rose-700", "No Login":"bg-sky-50 text-sky-700" };
+const statusDot   = { Active:"bg-emerald-600", Inactive:"bg-stone-400", Pending:"bg-amber-500", Archived:"bg-rose-600", "No Login":"bg-sky-500" };
 const vaccStyle   = { "Fully Vaccinated":"bg-emerald-50 text-emerald-700", "In Progress":"bg-amber-50 text-amber-700", Delayed:"bg-rose-50 text-rose-700", Upcoming:"bg-sky-50 text-sky-700" };
 const avatarSize  = { sm:"h-9 w-9 text-[11px]", md:"h-10 w-10 text-[11px]", lg:"h-14 w-14 text-[15px]" };
 
@@ -124,9 +128,9 @@ function toDateInputValue(iso) {
 const mapParent = (p) => ({
   id:p.parentID, initials:`${p.firstName?.[0] || ""}${p.lastName?.[0] || ""}`.toUpperCase(), name:`${p.firstName} ${p.lastName}`,
   // A contact-only guardian (no portal login) has no email
-  relationship:"Parent", contact:p.contactNo, email:p.email || "", username:(p.email || "").split("@")[0] || "—",
-  // NOTE: ParentsController has no Status field/endpoint — hardcoded until the API exposes one.
-  status:"Active", address:p.address, barangay:p.barangayNo,
+  relationship:"Parent", contact:p.contactNo, email:p.email || "", username:p.username || (p.email || "").split("@")[0] || "—",
+  // Portal login: Active / Inactive (deactivated), or "No Login" for a contact-only guardian
+  accountId:p.accountID || null, status:p.accountStatus || "Active", address:p.address, barangay:p.barangayNo,
   raw:p, // original API record, kept so edits that don't touch every field don't lose data
 });
 
@@ -387,24 +391,84 @@ const childColumns = [
 ];
 
 /* -- row "..." action menus, same idea: config array instead of two hand-written dropdowns -- */
-const parentMenuItems = [
+// Login actions only apply to a parent who has a portal login.
+const parentMenuItems = (p) => [
   { icon:Baby, label:"Register Child", action:(p)=>openRegisterModal("child", { parent:p }) },
   { icon:Link2, label:"Link Existing Child", action:(p)=>openPicker("linkChild",{parent:p}) },
-  { divider:true },
-  { icon:KeyRound, label:"Reset Password", action:()=>{} },
-  { icon:Ban, label:"Deactivate", class:"text-amber-700 hover:bg-amber-50", action:()=>{} },
-  { icon:ArchiveIcon, label:"Archive", class:"text-rose-700 hover:bg-rose-50", action:()=>{} },
+  ...(p.accountId ? [
+    { divider:true },
+    { icon:KeyRound, label:"Reset Password", action:(p)=>askResetPassword(p) },
+    p.status === "Inactive"
+      ? { icon:ShieldCheck, label:"Reactivate Login", class:"text-emerald-700 hover:bg-emerald-50", action:(p)=>askSetLoginActive(p, true) }
+      : { icon:Ban, label:"Deactivate Login", class:"text-amber-700 hover:bg-amber-50", action:(p)=>askSetLoginActive(p, false) },
+  ] : []),
 ];
 const childMenuItems = [
   { icon:Link2, label:"Link Parent / Guardian", action:(c)=>openPicker("linkParent",{child:c}) },
   { icon:UserCircle2, label:"Manage Linked Accounts", action:(c)=>viewChild(c) },
   { icon:Syringe, label:"Add Historical Vaccination Records", action:(c)=>{ selectedChild.value=c; loadChildVaccinations(c.id); openHistoricalModal(); } },
-  { divider:true },
-  { icon:ArchiveIcon, label:"Archive", class:"text-rose-700 hover:bg-rose-50", action:()=>{} },
 ];
 
+// The tables scroll sideways, which cut the menu off, so the menu is drawn on
+// top of the page at the button's position (opening upward near the bottom).
 const actionsMenuOpenFor = ref(null);
-const toggleActionsMenu = (id) => { actionsMenuOpenFor.value = actionsMenuOpenFor.value===id ? null : id; };
+const actionsMenuStyle = ref({});
+const toggleActionsMenu = (id, event) => {
+  if (actionsMenuOpenFor.value === id) { actionsMenuOpenFor.value = null; return; }
+  const r = event.currentTarget.getBoundingClientRect();
+  const left = `${Math.max(8, r.right - 224)}px`;   // menu is w-56 (224px), right-aligned to the button
+  actionsMenuStyle.value = window.innerHeight - r.bottom < 240
+    ? { left, bottom: `${window.innerHeight - r.top + 6}px` }
+    : { left, top: `${r.bottom + 6}px` };
+  actionsMenuOpenFor.value = id;
+};
+const closeActionsMenu = () => { actionsMenuOpenFor.value = null; };
+onMounted(() => { window.addEventListener("scroll", closeActionsMenu, true); window.addEventListener("resize", closeActionsMenu); });
+onUnmounted(() => { window.removeEventListener("scroll", closeActionsMenu, true); window.removeEventListener("resize", closeActionsMenu); });
+
+/* ---- Parent login: deactivate / reactivate / reset password (confirm window) ---- */
+const accountDialog = ref(null); // { title, message, confirmLabel, danger, run, busy, error, result }
+
+function askSetLoginActive(p, active) {
+  accountDialog.value = {
+    title: active ? `Reactivate ${p.name}'s login?` : `Deactivate ${p.name}'s login?`,
+    message: active
+      ? "They'll be able to sign in to the parent portal again."
+      : "They won't be able to sign in to the parent portal until the login is reactivated. Their children's records, schedule and reminders stay as they are.",
+    confirmLabel: active ? "Reactivate" : "Deactivate",
+    danger: !active,
+    run: async () => {
+      await api.setAccountStatus(p.accountId, active);
+      await loadAll();
+      return { text: `${p.name}'s login is now ${active ? "active" : "deactivated"}.` };
+    },
+  };
+}
+
+function askResetPassword(p) {
+  accountDialog.value = {
+    title: `Reset ${p.name}'s password?`,
+    message: "A temporary password is made and shown here. They must choose a new password the next time they sign in.",
+    confirmLabel: "Reset Password",
+    danger: false,
+    run: async () => {
+      const r = await api.resetAccountPassword(p.accountId);
+      const realEmail = p.email && !/@example\.com$|@demo\./i.test(p.email);
+      return {
+        text: realEmail && r.emailed ? `It was also emailed to ${p.email}.` : "Give it to the parent; it wasn't emailed.",
+        password: r.temporaryPassword,
+      };
+    },
+  };
+}
+
+async function runAccountDialog() {
+  const d = accountDialog.value;
+  d.busy = true; d.error = null;
+  try { d.result = await d.run(); }
+  catch (e) { d.error = e.response?.status === 403 ? "You're not allowed to change this account." : (e.response?.data?.message || e.message); }
+  finally { d.busy = false; }
+}
 
 /* ============================= View drawers ============================= */
 const showParentDrawer = ref(false);
@@ -1084,15 +1148,20 @@ async function submitChildRegister() {
                     <div class="flex items-center gap-1 relative">
                       <button @click="viewParent(p)" class="p-1.5 rounded-lg hover:bg-stone-100" title="View Details"><Eye :size="15" class="text-stone-500" /></button>
                       <button @click="openEdit('parent', p)" class="p-1.5 rounded-lg hover:bg-stone-100" title="Edit Parent"><Pencil :size="15" class="text-stone-500" /></button>
-                      <button @click="toggleActionsMenu(p.id)" class="p-1.5 rounded-lg hover:bg-stone-100" title="More actions"><MoreHorizontal :size="15" class="text-stone-500" /></button>
-                      <div v-if="actionsMenuOpenFor === p.id" class="absolute right-0 top-9 z-10 w-56 rounded-xl border border-stone-200 bg-white shadow-lg py-1.5">
-                        <template v-for="(m,i) in parentMenuItems" :key="i">
-                          <div v-if="m.divider" class="my-1 border-t border-stone-100"></div>
-                          <button v-else @click="m.action(p)" class="flex w-full items-center gap-2.5 px-3.5 py-2 text-[12.5px] hover:bg-stone-50" :class="m.class || 'text-stone-700'">
-                            <component :is="m.icon" :size="15" :class="m.class ? '' : 'text-stone-500'" /> {{ m.label }}
-                          </button>
+                      <button @click="toggleActionsMenu(p.id, $event)" class="p-1.5 rounded-lg hover:bg-stone-100" title="More actions"><MoreHorizontal :size="15" class="text-stone-500" /></button>
+                      <Teleport to="body">
+                        <template v-if="actionsMenuOpenFor === p.id">
+                          <div class="fixed inset-0 z-40" @click="closeActionsMenu"></div>
+                          <div class="fixed z-50 w-56 rounded-xl border border-stone-200 bg-white shadow-lg py-1.5" :style="actionsMenuStyle">
+                            <template v-for="(m,i) in parentMenuItems(p)" :key="i">
+                              <div v-if="m.divider" class="my-1 border-t border-stone-100"></div>
+                              <button v-else @click="closeActionsMenu(); m.action(p)" class="flex w-full items-center gap-2.5 px-3.5 py-2 text-[12.5px] hover:bg-stone-50" :class="m.class || 'text-stone-700'">
+                                <component :is="m.icon" :size="15" :class="m.class ? '' : 'text-stone-500'" /> {{ m.label }}
+                              </button>
+                            </template>
+                          </div>
                         </template>
-                      </div>
+                      </Teleport>
                     </div>
                   </td>
                 </tr>
@@ -1129,15 +1198,20 @@ async function submitChildRegister() {
                     <div class="flex items-center gap-1 relative">
                       <button @click="viewChild(ch)" class="p-1.5 rounded-lg hover:bg-stone-100" title="View Child"><Eye :size="15" class="text-stone-500" /></button>
                       <button @click="openEdit('child', ch)" class="p-1.5 rounded-lg hover:bg-stone-100" title="Edit Child"><Pencil :size="15" class="text-stone-500" /></button>
-                      <button @click="toggleActionsMenu(ch.id)" class="p-1.5 rounded-lg hover:bg-stone-100" title="More actions"><MoreHorizontal :size="15" class="text-stone-500" /></button>
-                      <div v-if="actionsMenuOpenFor === ch.id" class="absolute right-0 top-9 z-10 w-56 rounded-xl border border-stone-200 bg-white shadow-lg py-1.5">
-                        <template v-for="(m,i) in childMenuItems" :key="i">
-                          <div v-if="m.divider" class="my-1 border-t border-stone-100"></div>
-                          <button v-else @click="m.action(ch)" class="flex w-full items-center gap-2.5 px-3.5 py-2 text-[12.5px] hover:bg-stone-50" :class="m.class || 'text-stone-700'">
-                            <component :is="m.icon" :size="15" :class="m.class ? '' : 'text-stone-500'" /> {{ m.label }}
-                          </button>
+                      <button @click="toggleActionsMenu(ch.id, $event)" class="p-1.5 rounded-lg hover:bg-stone-100" title="More actions"><MoreHorizontal :size="15" class="text-stone-500" /></button>
+                      <Teleport to="body">
+                        <template v-if="actionsMenuOpenFor === ch.id">
+                          <div class="fixed inset-0 z-40" @click="closeActionsMenu"></div>
+                          <div class="fixed z-50 w-56 rounded-xl border border-stone-200 bg-white shadow-lg py-1.5" :style="actionsMenuStyle">
+                            <template v-for="(m,i) in childMenuItems" :key="i">
+                              <div v-if="m.divider" class="my-1 border-t border-stone-100"></div>
+                              <button v-else @click="closeActionsMenu(); m.action(ch)" class="flex w-full items-center gap-2.5 px-3.5 py-2 text-[12.5px] hover:bg-stone-50" :class="m.class || 'text-stone-700'">
+                                <component :is="m.icon" :size="15" :class="m.class ? '' : 'text-stone-500'" /> {{ m.label }}
+                              </button>
+                            </template>
+                          </div>
                         </template>
-                      </div>
+                      </Teleport>
                     </div>
                   </td>
                 </tr>
@@ -1746,6 +1820,35 @@ async function submitChildRegister() {
           <button :disabled="historicalModal.submitting" @click="submitHistoricalVaccinations" class="rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white bg-emerald-700 hover:bg-emerald-800 shadow-sm disabled:opacity-50">
             {{ historicalModal.submitting ? "Saving..." : "Save Historical Vaccinations" }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= PARENT LOGIN: CONFIRM / RESULT ======================= -->
+    <div v-if="accountDialog" class="fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/40 px-4" @click.self="!accountDialog.busy && (accountDialog = null)">
+      <div class="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        <div class="px-6 pt-6 pb-4">
+          <p class="text-[15px] font-semibold">{{ accountDialog.result ? "Done" : accountDialog.title }}</p>
+          <template v-if="!accountDialog.result">
+            <p class="mt-2 text-[13px] text-stone-600">{{ accountDialog.message }}</p>
+            <p v-if="accountDialog.error" class="mt-3 rounded-xl bg-rose-50 p-3 text-[12px] text-rose-700">{{ accountDialog.error }}</p>
+          </template>
+          <template v-else>
+            <div v-if="accountDialog.result.password" class="mt-3 rounded-xl bg-stone-50 border border-stone-200 p-4 text-center">
+              <p class="text-[11px] uppercase tracking-wide text-stone-500">Temporary password</p>
+              <p class="mt-1 font-mono text-[18px] font-semibold tracking-wider select-all">{{ accountDialog.result.password }}</p>
+            </div>
+            <p class="mt-3 text-[13px] text-stone-600">{{ accountDialog.result.text }}</p>
+          </template>
+        </div>
+        <div class="flex justify-end gap-3 px-6 py-4 border-t border-stone-200">
+          <template v-if="!accountDialog.result">
+            <button :disabled="accountDialog.busy" @click="accountDialog = null" class="rounded-xl px-4 py-2.5 text-[13px] font-medium text-stone-600 hover:bg-stone-50">Cancel</button>
+            <button :disabled="accountDialog.busy" @click="runAccountDialog" class="rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50" :class="accountDialog.danger ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-700 hover:bg-emerald-800'">
+              {{ accountDialog.busy ? "Please wait..." : accountDialog.confirmLabel }}
+            </button>
+          </template>
+          <button v-else @click="accountDialog = null" class="rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white bg-emerald-700 hover:bg-emerald-800">Close</button>
         </div>
       </div>
     </div>
