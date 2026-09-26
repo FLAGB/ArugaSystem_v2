@@ -2,6 +2,7 @@ using AndroidWebAPI.Data;
 using AndroidWebAPI.DTOs;
 using AndroidWebAPI.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AndroidWebAPI.Controllers
 {
@@ -262,19 +263,35 @@ public async Task<IActionResult> CreateParent(
         // ── READ: GET /api/Parents/all ────────────────────────────
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.ClinicTeam)]
         [HttpGet("all")]
-        public async Task<IActionResult> GetAllParents()
+        public async Task<IActionResult> GetAllParents([FromServices] AndroidWebAPI.Data.AppDbContext context)
         {
             var parents = await _parentRepo.GetAllAsync();
-            var result = parents.Select(p => new
+
+            // Each parent's portal login (a contact-only guardian has none)
+            var logins = (await context.Accounts
+                    .Where(a => a.AccountType == "Parent")
+                    .Select(a => new { a.ReferenceID, a.AccountID, a.Username, a.Status })
+                    .ToListAsync())
+                .GroupBy(a => a.ReferenceID)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var result = parents.Select(p =>
             {
-                parentID = p.ParentID,
-                firstName = p.FirstName,
-                middleName = p.MiddleName,
-                lastName = p.LastName,
-                email = p.Email,
-                contactNo = p.ContactNo,
-                barangayNo = p.BarangayNo,
-                address = p.Address
+                logins.TryGetValue(p.ParentID, out var login);
+                return new
+                {
+                    parentID = p.ParentID,
+                    firstName = p.FirstName,
+                    middleName = p.MiddleName,
+                    lastName = p.LastName,
+                    email = p.Email,
+                    contactNo = p.ContactNo,
+                    barangayNo = p.BarangayNo,
+                    address = p.Address,
+                    accountID = login?.AccountID,
+                    username = login?.Username,
+                    accountStatus = login == null ? "No Login" : login.Status ? "Active" : "Inactive",
+                };
             });
 
             return Ok(result);

@@ -244,7 +244,10 @@ Position = dto.Role,
         // Active / Inactive only.
         // =========================================================
 
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
+        // The Admission Staff register families, so they may also switch a
+        // parent's login off and on; staff and health-worker accounts stay
+        // with the System Administrator.
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPatch("{id}/status")]
         public async Task<IActionResult> UpdateStatus(
             Guid id,
@@ -254,6 +257,8 @@ Position = dto.Role,
 
             if (account == null)
                 return NotFound(new { message = "Account not found." });
+            if (!User.IsInRole(AndroidWebAPI.Services.Roles.Admin) && account.AccountType != "Parent")
+                return Forbid();
 
             bool previous = account.Status;
             account.Status = dto.Status;
@@ -280,7 +285,9 @@ Position = dto.Role,
         // Admin-triggered reset. Forces MustChangePassword back to true.
         // =========================================================
 
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.Admin)]
+        // Staff may reset a parent's password (e.g. a parent at the counter
+        // who forgot it); other accounts are reset by the Administrator.
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = AndroidWebAPI.Services.Roles.StaffOrAdmin)]
         [HttpPost("{id}/reset-password")]
         public async Task<IActionResult> ResetPassword(Guid id, [FromServices] AndroidWebAPI.Services.MessageSender sender)
         {
@@ -288,6 +295,8 @@ Position = dto.Role,
 
             if (account == null)
                 return NotFound(new { message = "Account not found." });
+            if (!User.IsInRole(AndroidWebAPI.Services.Roles.Admin) && account.AccountType != "Parent")
+                return Forbid();
 
             string temporaryPassword = GenerateTemporaryPassword();
 
@@ -306,7 +315,7 @@ Position = dto.Role,
                 ? await _context.Parents.Where(p => p.ParentID == account.ReferenceID).Select(p => p.Email).FirstOrDefaultAsync()
                 : await _context.Users.Where(u => u.UserID == account.ReferenceID).Select(u => u.Email).FirstOrDefaultAsync();
             bool emailed = await sender.SendEmailAsync(email, "Your Aruga password was reset",
-                $"The administrator reset the password for your Aruga account ({account.Username}).\n\n" +
+                $"Leveriza Health Center reset the password for your Aruga account ({account.Username}).\n\n" +
                 $"Temporary password: {temporaryPassword}\n\n" +
                 "You'll be asked to choose your own password the next time you sign in. " +
                 "If you didn't ask for this, please contact Leveriza Health Center.");

@@ -29,6 +29,11 @@ by who uses it. The work is on the `Aruga-Polished` git branch.
   - The **Doctor/Nurse patient page** lists every linked parent/guardian with their relationship (the table shows "+1" when there is more than one); the **vaccination screen** shows who checked the child in and all guardians; the **printed vaccination card** lists all guardians.
   - In the **parent portal profile**, each child shows "You are Isabela's Grandmother" and everyone linked to the child (before, only Mother/Father/Guardian filled in).
   - Demo data: **lourdes.luna@demo.aruga.ph** is Isabela Cruz's grandmother (second guardian), to show this at the defense.
+- **Staff Patient Records: the "…" menu and parent logins.**
+  - The "…" menu now opens in front of the table instead of being cut off by it.
+  - **Deactivate Login / Reactivate Login** and **Reset Password** now work (they did nothing before). A deactivated parent can't sign in ("Account is inactive"); their children's records and reminders are unaffected. Reset shows a temporary password to give the parent (also emailed if they have a real email), and they must choose a new one at sign-in.
+  - The Status column shows the real login status: Active, Inactive, or **No Login** (a contact-only guardian). Staff can change **parent** logins only; staff and health-worker accounts stay with the Administrator.
+  - The **Archive** buttons were removed: nothing behind them was built, and archiving would need changes across the whole system.
 - **Every child has a full schedule.** Children added straight into the database had none, so their Schedule and Records only listed doses already given.
   - The system now builds the missing schedule when it starts: given doses count as done, the 28-day rule applies to the rest, and past dates show as overdue.
   - The Overview marks overdue doses "Overdue" instead of "Scheduled".
